@@ -175,7 +175,7 @@ class AliCloudApi {
 
     await listener({ msg: "检查扫码状态", status: "check" });
 
-    return new Promise<AliCloudApi.AliConfig>((resolve, reject) => {
+    return new Promise<AliCloudApi.LoginInfo>((resolve, reject) => {
       const checkStatus = async () => {
         const CheckResponse = await this.queryQrCodeStatus({
           ck,
@@ -204,7 +204,7 @@ class AliCloudApi {
             Buffer.from(bizExt, "base64").toString("utf-8")
           );
           await listener({ msg: "登陆成功", status: "confirmed" });
-          resolve(info);
+          resolve(info.pds_login_result);
           return;
         }
         setTimeout(() => {
@@ -1499,6 +1499,41 @@ class AliCloudApi {
 export { Wrapper, LocalCache };
 
 namespace AliCloudApi {
+  export interface LoginInfo {
+    role: string;
+    loginType: string;
+    expiresIn: number;
+    requestId: string;
+    state: string;
+    isFirstLogin: boolean;
+    needLink: boolean;
+    pathStatus: string;
+    nickName: string;
+    needRpVerify: boolean;
+    avatar: string;
+    accessToken: string;
+    userName: string;
+    userId: string;
+    defaultDriveId: string;
+    existLink: any[]; // Assuming this can be any array type
+    expireTime: string;
+    dataPinSetup: boolean;
+    tokenType: string;
+    dataPinSaved: boolean;
+    refreshToken: string;
+    status: string;
+    user_data: {
+      DingDingRobotUrl: string;
+      EncourageDesc: string;
+      FeedBackSwitch: boolean;
+      FollowingDesc: string;
+      ding_ding_robot_url: string;
+      encourage_desc: string;
+      feed_back_switch: boolean;
+      following_desc: string;
+    };
+  }
+
   export interface AliConfig {
     app_id: string;
     aliyun_drive_env: string;
@@ -1592,41 +1627,6 @@ namespace AliCloudApi {
     };
   }
 
-  export interface UserInfo {
-    avatar: string;
-    email: string;
-    phone: string;
-    role: string;
-    status: string;
-    description: string;
-    punishments: any | null;
-    creator: string;
-    backup_drive_id: string;
-    /**
-     * 接口需要的 drive_id
-     */
-    resource_drive_id: string;
-    user_id: string;
-    domain_id: string;
-    user_name: string;
-    nick_name: string;
-    default_drive_id: string;
-    sbox_drive_id: string | null;
-    created_at: number;
-    updated_at: number;
-    user_data: Record<string, unknown>;
-    punish_flag: any | null;
-    default_location: string;
-    deny_change_password_by_self: boolean;
-    expire_at: number | null;
-    last_login_time: number;
-    need_change_password_next_login: boolean;
-    phone_region: string;
-    vip_identity: string;
-    creator_level: any | null;
-    display_name: string;
-    is_new: boolean;
-  }
   export interface UserInfo {
     avatar: string;
     email: string;

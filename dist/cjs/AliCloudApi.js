@@ -179,7 +179,7 @@ class AliCloudApi {
                     if (["CONFIRMED"].includes(qrCodeStatus)) {
                         const info = JSON.parse(Buffer.from(bizExt, "base64").toString("utf-8"));
                         yield listener({ msg: "登陆成功", status: "confirmed" });
-                        resolve(info);
+                        resolve(info.pds_login_result);
                         return;
                     }
                     setTimeout(() => {

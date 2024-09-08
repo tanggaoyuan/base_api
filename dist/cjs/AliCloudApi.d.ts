@@ -44,7 +44,7 @@ declare class AliCloudApi {
         msg: string;
         status: "init" | "qr" | "check" | "expired" | "canceled" | "scaned" | "confirmed";
         data?: any;
-    }) => void | Promise<void>): Promise<AliCloudApi.AliConfig>;
+    }) => void | Promise<void>): Promise<AliCloudApi.LoginInfo>;
     /**
      * 获取个人信息和 drive_id = resource_drive_id
      * 默认缓存1天
@@ -286,6 +286,40 @@ declare class AliCloudApi {
 }
 export { Wrapper, LocalCache };
 declare namespace AliCloudApi {
+    interface LoginInfo {
+        role: string;
+        loginType: string;
+        expiresIn: number;
+        requestId: string;
+        state: string;
+        isFirstLogin: boolean;
+        needLink: boolean;
+        pathStatus: string;
+        nickName: string;
+        needRpVerify: boolean;
+        avatar: string;
+        accessToken: string;
+        userName: string;
+        userId: string;
+        defaultDriveId: string;
+        existLink: any[];
+        expireTime: string;
+        dataPinSetup: boolean;
+        tokenType: string;
+        dataPinSaved: boolean;
+        refreshToken: string;
+        status: string;
+        user_data: {
+            DingDingRobotUrl: string;
+            EncourageDesc: string;
+            FeedBackSwitch: boolean;
+            FollowingDesc: string;
+            ding_ding_robot_url: string;
+            encourage_desc: string;
+            feed_back_switch: boolean;
+            following_desc: string;
+        };
+    }
     interface AliConfig {
         app_id: string;
         aliyun_drive_env: string;
@@ -375,41 +409,6 @@ declare namespace AliCloudApi {
             status: number;
             success: boolean;
         };
-    }
-    interface UserInfo {
-        avatar: string;
-        email: string;
-        phone: string;
-        role: string;
-        status: string;
-        description: string;
-        punishments: any | null;
-        creator: string;
-        backup_drive_id: string;
-        /**
-         * 接口需要的 drive_id
-         */
-        resource_drive_id: string;
-        user_id: string;
-        domain_id: string;
-        user_name: string;
-        nick_name: string;
-        default_drive_id: string;
-        sbox_drive_id: string | null;
-        created_at: number;
-        updated_at: number;
-        user_data: Record<string, unknown>;
-        punish_flag: any | null;
-        default_location: string;
-        deny_change_password_by_self: boolean;
-        expire_at: number | null;
-        last_login_time: number;
-        need_change_password_next_login: boolean;
-        phone_region: string;
-        vip_identity: string;
-        creator_level: any | null;
-        display_name: string;
-        is_new: boolean;
     }
     interface UserInfo {
         avatar: string;
