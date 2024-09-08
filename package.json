@@ -1,0 +1,34 @@
+{
+  "name": "base_api",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "ts-node -r tsconfig-paths/register --transpile-only src/test/index.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@bochilteam/scraper-savefrom": "^5.0.0",
+    "@types/axios": "^0.14.0",
+    "axios": "^1.7.7",
+    "content-disposition": "^0.5.4",
+    "m3u8stream": "^0.8.6",
+    "node-html-parser": "^6.1.13",
+    "qs": "^6.13.0",
+    "request_chain": "github:tanggaoyuan/request_chain",
+    "sanitize-filename": "^1.6.3"
+  },
+  "devDependencies": {
+    "@types/qs": "^6.9.15",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0"
+  },
+  "exports": {
+    "./node": {
+      "require": "./dist/cjs/node/index.js",
+      "types": "./dist/cjs/node/index.d.ts"
+    }
+  }
+}
