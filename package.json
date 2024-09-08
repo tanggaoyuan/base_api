@@ -27,8 +27,8 @@
   },
   "exports": {
     "./node": {
-      "require": "./dist/cjs/node/index.js",
-      "types": "./dist/cjs/node/index.d.ts"
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/cjs/index.d.ts"
     }
   }
 }
