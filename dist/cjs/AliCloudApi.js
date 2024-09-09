@@ -592,6 +592,10 @@ class AliCloudApi {
                     outputStream.write(data);
                 }
                 outputStream.end();
+                fs_1.default.rmSync(path_1.default.join(temp_dir_path, dir_name), {
+                    recursive: true,
+                    force: true,
+                });
                 clearInterval(timeRef);
             }
             catch (error) {

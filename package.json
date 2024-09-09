@@ -12,7 +12,6 @@
   "dependencies": {
     "@bochilteam/scraper-savefrom": "^5.0.0",
     "@types/axios": "^0.14.0",
-    "axios": "^1.7.7",
     "content-disposition": "^0.5.4",
     "m3u8stream": "^0.8.6",
     "node-html-parser": "^6.1.13",

@@ -806,6 +806,12 @@ class AliCloudApi {
       }
 
       outputStream.end();
+
+      fs.rmSync(path.join(temp_dir_path, dir_name), {
+        recursive: true,
+        force: true,
+      });
+
       clearInterval(timeRef);
     } catch (error) {
       clearInterval(timeRef);
