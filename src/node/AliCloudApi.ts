@@ -784,12 +784,6 @@ class AliCloudApi {
         ...params,
       });
 
-      await new Promise((resolve) => {
-        setTimeout(() => {
-          resolve(true);
-        }, 500);
-      });
-
       const files = fs.readdirSync(path.join(temp_dir_path, dir_name));
       const file_parts = files.sort((a, b) => {
         const numA = parseInt(a.match(/\.part(\d+)$/)[1], 10);

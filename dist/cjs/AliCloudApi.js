@@ -574,11 +574,6 @@ class AliCloudApi {
                 yield limitConcurrency(tasks, params.concurrent || 2);
                 reportProgress(file.size);
                 yield this.reportTask(Object.assign({ slice_num: 0 }, params));
-                yield new Promise((resolve) => {
-                    setTimeout(() => {
-                        resolve(true);
-                    }, 500);
-                });
                 const files = fs_1.default.readdirSync(path_1.default.join(temp_dir_path, dir_name));
                 const file_parts = files.sort((a, b) => {
                     const numA = parseInt(a.match(/\.part(\d+)$/)[1], 10);
