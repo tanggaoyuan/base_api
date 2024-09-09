@@ -1,5 +1,4 @@
-import { Wrapper, RequestChain, Cache } from "request_chain/core";
-import { LocalCache } from "request_chain/node";
+import { RequestChain, Cache } from "request_chain/core";
 import crypto from "crypto";
 import { parse } from "node-html-parser";
 import { savefrom } from "@bochilteam/scraper-savefrom";
@@ -1202,7 +1201,5 @@ class YoubetuApi {
     return passThrough;
   }
 }
-
-export { Wrapper, LocalCache };
 
 export default YoubetuApi;

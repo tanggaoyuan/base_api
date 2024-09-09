@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc&&tsc -p ./tsconfig.node.json",
     "test": "ts-node -r tsconfig-paths/register --transpile-only src/test/index.ts"
   },
   "author": "",
@@ -26,8 +26,15 @@
   },
   "exports": {
     "./node": {
-      "require": "./dist/cjs/index.js",
-      "types": "./dist/cjs/index.d.ts"
+      "require": "./dist/cjs/node/index.js",
+      "import": "./dist/esm/node/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "node": [
+        "./dist/cjs/node/index.d.ts"
+      ]
     }
   }
 }

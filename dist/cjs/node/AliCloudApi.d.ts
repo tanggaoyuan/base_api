@@ -1,5 +1,4 @@
-import { Wrapper, RequestChain, Cache } from "request_chain/core";
-import { LocalCache } from "request_chain/node";
+import { RequestChain, Cache } from "request_chain/core";
 declare class AliCloudApi {
     private chain;
     private static readonly TIME_ONE_DAY;
@@ -284,7 +283,6 @@ declare class AliCloudApi {
         message: string;
     }>;
 }
-export { Wrapper, LocalCache };
 declare namespace AliCloudApi {
     interface LoginInfo {
         role: string;

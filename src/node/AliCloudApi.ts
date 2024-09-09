@@ -1,5 +1,4 @@
-import { Wrapper, RequestChain, Cache } from "request_chain/core";
-import { LocalCache } from "request_chain/node";
+import { RequestChain, Cache } from "request_chain/core";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
@@ -1495,8 +1494,6 @@ class AliCloudApi {
     }
   }
 }
-
-export { Wrapper, LocalCache };
 
 namespace AliCloudApi {
   export interface LoginInfo {

@@ -12,11 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LocalCache = exports.Wrapper = void 0;
 const core_1 = require("request_chain/core");
-Object.defineProperty(exports, "Wrapper", { enumerable: true, get: function () { return core_1.Wrapper; } });
-const node_1 = require("request_chain/node");
-Object.defineProperty(exports, "LocalCache", { enumerable: true, get: function () { return node_1.LocalCache; } });
 const crypto_1 = __importDefault(require("crypto"));
 const node_html_parser_1 = require("node-html-parser");
 const scraper_savefrom_1 = require("@bochilteam/scraper-savefrom");

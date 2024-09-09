@@ -1,5 +1,4 @@
-import { Wrapper, RequestChain, Cache } from "request_chain/core";
-import { LocalCache } from "request_chain/node";
+import { RequestChain, Cache } from "request_chain/core";
 import { PassThrough } from "stream";
 declare class YoubetuApi {
     private chain;
@@ -53,6 +52,5 @@ declare class YoubetuApi {
         total?: number;
     }) => void): Promise<PassThrough>;
 }
-export { Wrapper, LocalCache };
 export default YoubetuApi;
 //# sourceMappingURL=YoubetuApi.d.ts.map
