@@ -1,23 +1,61 @@
-import { RequestChain, Cache } from "request_chain/core";
+import { RequestChain, Cache, RequestChainResponse } from "request_chain/core";
+import { Downloader } from "request_chain/node";
 declare class AliCloudApi {
-    private chain;
+    chain: RequestChain;
+    private local_cache;
     private static readonly TIME_ONE_DAY;
     private static readonly TIME_ONE_MINUTE;
     constructor(options: {
         request: RequestChain.RequestFn;
         localCache: Cache;
-        interceptor?: RequestChain.Interceptor;
+        interceptor?: RequestChain.InterceptorFn;
     });
+    /**
+     * 随机的设备id
+     * @returns
+     */
+    generateRandomDeviceId(): any;
+    static DeviceRefere: string;
+    static WebRefere: string;
+    /**
+     * 根据设备标识 生成设备ID
+     */
+    generateDeviceId(): any;
+    x_signature(params: {
+        privateKeyHex: string;
+        app_id: string;
+        x_device_id: string;
+        user_id: string;
+        nonce?: number;
+    }): string;
+    generatePrivateKeyHex(params: {
+        token: string;
+        app_id: string;
+        x_device_id: string;
+        user_id: string;
+    }): Promise<{
+        privateKeyHex: string;
+        publicKeyHex: string;
+    }>;
+    generateRequestParams(parmas: {
+        token?: string;
+        app_id: string;
+        x_device_id: string;
+        drive_id: string;
+        user_id: string;
+        privateKeyHex: string;
+    }): AliCloudApi.RequestParams;
+    reportTask(slice_num: number, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
     /**
      * 获取云盘配置信息，如app_id、client_id
      * 默认缓存1天
      */
-    getConfig(): import("request_chain/core").RequestChainResponse<AliCloudApi.AliConfig>;
+    getConfig(): RequestChainResponse<AliCloudApi.AliConfig>;
     /**
      * 获取扫码登录的扫码链接、ck、t，需要生成二维码
      * 默认缓存10分钟
      */
-    getLoginQrCodeUrl(): import("request_chain/core").RequestChainResponse<AliCloudApi.LoginQrCode>;
+    getLoginQrCodeUrl(): RequestChainResponse<AliCloudApi.LoginQrCode>;
     /**
       * 检查扫码登录状态，如果成功返回token信息
       *  qrCodeStatus = CONFIRMED
@@ -28,14 +66,15 @@ declare class AliCloudApi {
     queryQrCodeStatus(params: {
         ck: string;
         t: number;
-    }): import("request_chain/core").RequestChainResponse<AliCloudApi.LoginQrCodeStatus>;
+    }): RequestChainResponse<AliCloudApi.LoginQrCodeStatus>;
     /**
      * 刷新凭证
      * @param app_id
      * @param refresh_token
      * @returns
      */
-    refreshToken(app_id: string, refresh_token: string): import("request_chain/core").RequestChainResponse<AliCloudApi.TokenInfo>;
+    refreshToken(app_id: string, refresh_token: string): RequestChainResponse<AliCloudApi.TokenInfo>;
+    logout(request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
     /**
      * 二维码登录
      */
@@ -46,59 +85,46 @@ declare class AliCloudApi {
     }) => void | Promise<void>): Promise<AliCloudApi.LoginInfo>;
     /**
      * 获取个人信息和 drive_id = resource_drive_id
-     * 默认缓存1天
      */
-    getUserInfo(token: string): import("request_chain/core").RequestChainResponse<AliCloudApi.UserInfo>;
+    getUserInfo(token: string): RequestChainResponse<AliCloudApi.UserInfo>;
     /**
      * 获取文件目录
      */
     getDirs(params: {
-        token: string;
         limit?: number;
-        drive_id: string;
         all?: boolean;
         parent_file_id?: string;
+        order_direction?: "DESC" | "ASC";
         /**
          * 下一页  next_marker
          */
         marker?: string;
-    }): import("request_chain/core").RequestChainResponse<{
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
         next_marker: string;
         items: AliCloudApi.FileDirItem[];
     }>;
     /**
      * 获取文件信息
-     * @param drive_id
      * @param file_id
      * @returns
      */
-    getFileInfo(params: {
-        drive_id: string;
-        file_id: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<AliCloudApi.FileDirItem>;
+    getFileInfo(file_id: string, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.FileDirItem>;
     /**
      * 通过路径获取文件信息
-     * @param drive_id
      * @param file_path
      * @returns
      */
-    getFileInfoByPath(params: {
-        drive_id: string;
-        file_path: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<AliCloudApi.FileDirItem>;
+    getFileInfoByPath(file_path: string, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.FileDirItem>;
     /**
-     * 获取下载地址,默认缓存2分钟
-     * @param drive_id
+     * 获取下载地址,默认4小时
+     * 返回 header 里面的 access-control-allow-origin  在下载时的 Referer进行设置
      * @param file_id   id
      * @returns
      */
     getDownloadUrl(params: {
-        drive_id: string;
         file_id: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<AliCloudApi.DownloadDetail>;
+        os?: "web" | "Mac" | "Windows" | "iOS" | "Android" | "Browser" | "Unknown";
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.DownloadDetail>;
     generateProofCode(buf: Buffer, token: string): {
         proof_code: string;
         content_hash: string;
@@ -111,42 +137,28 @@ declare class AliCloudApi {
     /**
      * 扔进回收站
      */
-    trashRecycleBin(params: {
-        drive_id: string;
-        file_id: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<any>;
+    trashRecycleBin(file_ids: Array<string>, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
     /**
      * 回收站还原
      */
-    restoreRecycleBin(params: {
-        drive_id: string;
-        file_id: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<any>;
+    restoreRecycleBin(file_id: string, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
     /**
      * 回收站列表
      */
     getRecycleBins(params: {
         limit?: number;
-        drive_id: string;
-        token: string;
         all?: boolean;
-    }): import("request_chain/core").RequestChainResponse<{
+        marker?: string;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
         items: AliCloudApi.FileDirItem[];
         next_marker: string;
     }>;
     /**
      * 彻底删除
-     * @param drive_id
      * @param file_id
      * @returns
      */
-    delete(params: {
-        drive_id: string;
-        file_id: string;
-        token: string;
-    }): Promise<RequestChain.Response<any>>;
+    delete(file_ids: Array<string>, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
     /**
      * 搜索文件
      * @param params
@@ -155,9 +167,8 @@ declare class AliCloudApi {
     searchFile(params: {
         parent_file_id?: string;
         name: string;
-        drive_id: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<{
+        marker?: string;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
         items: AliCloudApi.FileDirItem[];
         next_marker: string;
     }>;
@@ -167,75 +178,46 @@ declare class AliCloudApi {
      * @returns
      */
     createDir(params: {
-        drive_id: string;
         parent_file_id?: string;
         name: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<AliCloudApi.DirInfo>;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.DirInfo>;
     /**
      * 检查创建路径文件
-     * @param drive_id
      * @param cloud_path
      * @returns
      */
-    checkCreateDirByPath(params: {
-        drive_id: string;
-        cloud_path: string;
-        token: string;
-    }): Promise<AliCloudApi.DirInfo>;
-    /**
-     * 创建下载任务
-     * @param params
-     * @returns
-     */
+    checkCreateDirByPath(cloud_path: string, request_params: AliCloudApi.RequestParams): Promise<AliCloudApi.DirInfo>;
     downloadTask(params: {
-        file: AliCloudApi.FileDirItem;
-        dir_path: string;
-        token: string;
-        drive_id: string;
-        onProgress?: (data: {
-            loaded: number;
-            total: number;
-            progress: number;
-        }) => void;
+        file: {
+            download_url?: string;
+            file_id: string;
+            size: number;
+            name: string;
+        };
         part_size?: number;
-        concurrent?: number;
         temp_dir_path?: string;
-    }): Promise<never>;
+        referer?: string;
+    }, request_params: AliCloudApi.RequestParams): Promise<Downloader>;
     /**
      *  遍历获取目录文件树
      */
-    traverseDirs(params: {
-        drive_id: string;
-        file_id: string;
-        token: string;
-    }): Promise<AliCloudApi.FileDirTree>;
+    traverseDirs(file_id: string, request_params: AliCloudApi.RequestParams): Promise<AliCloudApi.FileDirTree>;
     /**
      * 获取具有下载地址的文件树
      */
     extractLinksFromDirs(params: {
-        drive_id: string;
         file_id: string;
-        token: string;
-    }): Promise<AliCloudApi.FileDirTree>;
-    /**
-     * 大概和下载速度是否稳定有关系
-     */
-    reportTask(params: {
-        slice_num: number;
-        drive_id: string;
-        token: string;
-    }): import("request_chain/core").RequestChainResponse<any>;
+        os?: "web" | "Mac" | "Windows" | "iOS" | "Android" | "Browser" | "Unknown";
+    }, request_params: AliCloudApi.RequestParams): Promise<AliCloudApi.FileDirTree>;
+    private time_ref;
     download(params: {
-        drive_id: string;
         file_id: string;
-        token: string;
         save_dir_path: string;
         check_name_mode?: "auto_rename" | "overwrite" | "refuse" | "compare";
         part_size?: number;
-        concurrent?: number;
         temp_path?: string;
-    }, onProgress?: (data: Record<string, {
+        concurrent?: number;
+    }, request_params: AliCloudApi.RequestParams, onProgress?: (data: Record<string, {
         progress: number;
         total: number;
         loaded: number;
@@ -247,13 +229,47 @@ declare class AliCloudApi {
         code: number;
         msg: string;
     }>;
+    uploadTask(params: {
+        start_index?: number;
+        source_path: string;
+        parent_file_id?: string;
+    }, request_params: AliCloudApi.RequestParams): Promise<never> | {
+        upload: () => Promise<{
+            file_id: string;
+            name: string;
+            parent_file_id: string;
+            size: number;
+            content_hash: string;
+        }>;
+        stop: () => void;
+        pause: () => void;
+        onProgress: (fn: (data: {
+            loaded: number;
+            total: number;
+            progress: number;
+            name: string;
+        }, part: {
+            current: number;
+            total: number;
+        }) => void) => () => void;
+        onStatus: (fn: (status: "pending" | "wait" | "done" | "stop", part: {
+            current: number;
+            total: number;
+        }) => void) => () => void;
+        finish: () => Promise<{
+            file_id: string;
+            name: string;
+            parent_file_id: string;
+            size: number;
+            content_hash: string;
+        }>;
+        readonly status: "pending" | "wait" | "done" | "stop";
+    };
     uploadFile(params: {
         source_path: string;
         parent_file_id?: string;
-        drive_id: string;
-        token: string;
         check_name_mode?: "auto_rename" | "overwrite" | "refuse" | "compare";
-    }, onProgress?: (data: {
+    }, request_params: AliCloudApi.RequestParams, onProgress?: (data: {
         loaded: number;
         total: number;
         progress: number;
@@ -269,11 +285,9 @@ declare class AliCloudApi {
          */
         source_path: string;
         parent_file_id?: string;
-        drive_id: string;
-        token: string;
         check_name_mode?: "auto_rename" | "overwrite" | "refuse" | "compare";
         concurrent?: number;
-    }, onProgress?: (data: Record<string, {
+    }, request_params: AliCloudApi.RequestParams, onProgress?: (data: Record<string, {
         progress: number;
         total: number;
         loaded: number;
@@ -284,6 +298,19 @@ declare class AliCloudApi {
     }>;
 }
 declare namespace AliCloudApi {
+    interface RequestParams {
+        header: {
+            Authorization?: string;
+            "x-signature": string;
+            "x-device-id": string;
+        };
+        data: {
+            user_id: string;
+            drive_id: string;
+            app_id: string;
+        };
+        token?: string;
+    }
     interface LoginInfo {
         role: string;
         loginType: string;

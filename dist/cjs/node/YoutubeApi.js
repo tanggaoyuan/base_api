@@ -1,3 +1,4 @@
+"use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -7,12 +8,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import { RequestChain } from "request_chain/core";
-import crypto from "crypto";
-import { parse } from "node-html-parser";
-import { savefrom } from "@bochilteam/scraper-savefrom";
-import { PassThrough } from "stream";
-import m3u8stream from "m3u8stream";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const core_1 = require("request_chain/core");
+const crypto_1 = __importDefault(require("crypto"));
+const node_html_parser_1 = require("node-html-parser");
+const scraper_savefrom_1 = require("@bochilteam/scraper-savefrom");
+const stream_1 = require("stream");
+const m3u8stream_1 = __importDefault(require("m3u8stream"));
+const sanitize_filename_1 = __importDefault(require("sanitize-filename"));
 const FORMATS = {
     5: {
         mimeType: 'video/flv; codecs="Sorenson H.283, mp3"',
@@ -604,16 +610,23 @@ const FORMATS = {
     },
 };
 const CHUNK_SIZE = 10 * 1024 * 1024;
-class YoubetuApi {
+class YoutubeApi {
     constructor(options) {
         this.agent = options.agent;
-        this.chain = new RequestChain({
+        this.chain = new core_1.RequestChain({
             request: options.request,
             local: options.localCache,
             interceptor: options.interceptor,
         }, {
             timeout: 10000,
         });
+    }
+    parseVideoId(url) {
+        let [_, videoId] = url.split("v=");
+        if (!videoId && url.includes("youtu.be")) {
+            videoId = url.split("/").pop();
+        }
+        return videoId;
     }
     queryVideos(data) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -653,7 +666,7 @@ class YoubetuApi {
                     }
                     const randomNum = randomCode(o);
                     const decodeValue = [e, r, randomNum].join("");
-                    const hash = crypto.createHash("sha256");
+                    const hash = crypto_1.default.createHash("sha256");
                     // Update the hash with the input data
                     hash.update(decodeValue, "utf8");
                     // Generate the hash digest in base64 format
@@ -740,7 +753,7 @@ class YoubetuApi {
                 "upgrade-insecure-requests": 1,
             })
                 .headerFormUrlencoded();
-            const root = parse(response.data);
+            const root = (0, node_html_parser_1.parse)(response.data);
             const title = ((_a = root.querySelector(".card-body h4")) === null || _a === void 0 ? void 0 : _a.innerHTML) ||
                 ((_b = root.querySelector(".card-body h5")) === null || _b === void 0 ? void 0 : _b.innerHTML);
             const tbody = root
@@ -805,7 +818,7 @@ class YoubetuApi {
     }
     requestSaveForm(id) {
         return __awaiter(this, void 0, void 0, function* () {
-            const response = yield savefrom(`https://www.youtube.com/watch?v=${id}`);
+            const response = yield (0, scraper_savefrom_1.savefrom)(`https://www.youtube.com/watch?v=${id}`);
             const info = response[0] || { meta: { title: "" }, url: [] };
             const title = info.meta.title;
             const formats = info.url;
@@ -893,7 +906,7 @@ class YoubetuApi {
             .sort((b, a) => {
             return a.filesize - b.filesize;
         });
-        return { video, audio, title };
+        return { video, audio, title: (0, sanitize_filename_1.default)(title) };
     }
     getMediaInfo(id) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -924,6 +937,7 @@ class YoubetuApi {
                     break;
                 }
                 catch (err) {
+                    console.log("xxxxxxxxxxxxxxxxxxxxx", method);
                     error = err;
                 }
             }
@@ -931,16 +945,16 @@ class YoubetuApi {
                 return Promise.reject(error);
             }
             const info = this.format(response);
-            return Object.assign(Object.assign({}, info), { method });
+            return Object.assign(Object.assign({}, info), { method, videoId: id });
         });
     }
     downloadSource(format, onProgress) {
         return __awaiter(this, void 0, void 0, function* () {
-            const passThrough = new PassThrough({
+            const passThrough = new stream_1.PassThrough({
                 highWaterMark: 1024 * 512,
             });
             if (format.isHLS || format.isDashMPD) {
-                const req = m3u8stream(format.url, {
+                const req = (0, m3u8stream_1.default)(format.url, {
                     begin: format.isLive && Date.now(),
                     requestOptions: { agent: this.agent },
                     parser: format.isDashMPD ? "dash-mpd" : "m3u8",
@@ -1017,4 +1031,4 @@ class YoubetuApi {
         });
     }
 }
-export default YoubetuApi;
+exports.default = YoutubeApi;

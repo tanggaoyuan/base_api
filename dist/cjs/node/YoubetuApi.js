@@ -613,10 +613,12 @@ class YoubetuApi {
     constructor(options) {
         this.agent = options.agent;
         this.chain = new core_1.RequestChain({
-            timeout: 10000,
             request: options.request,
-            localCache: options.localCache,
-        }, options.interceptor);
+            local: options.localCache,
+            interceptor: options.interceptor,
+        }, {
+            timeout: 10000,
+        });
     }
     queryVideos(data) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -678,7 +680,6 @@ class YoubetuApi {
                     region: "zh-CN",
                     freshness: "All",
                 }, "/v2/videos/search");
-                // https://cdn.swisscows.com/image?url=
                 const response = yield this.chain
                     .get(`https://api.swisscows.com/v2/videos/search`)
                     .query(params)
@@ -708,13 +709,14 @@ class YoubetuApi {
     }
     requestTubedown(id) {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.chain
+            const response = yield this.chain
                 .post("https://tubedown.cn/api/youtube")
                 .send({
                 url: `https://www.youtube.com/watch?v=${id}`,
             })
-                .cache("local", 60000)
+                .cache("local", 300000)
                 .getData();
+            return response.data;
         });
     }
     requestAddyoutube(id) {
@@ -723,7 +725,7 @@ class YoubetuApi {
             if (!this.AddyoutubeToken) {
                 const response = yield this.chain
                     .get("https://addyoutube.com/")
-                    .cache("local", 60000)
+                    .cache("local", 300000)
                     .setHeaders({
                     "User-Agent": this.chain.getPcUserAgent("Windows"),
                 });
@@ -949,14 +951,16 @@ class YoubetuApi {
                     parser: format.isDashMPD ? "dash-mpd" : "m3u8",
                 });
                 req.on("progress", (segment, totalSegments) => {
+                    const data = {
+                        loaded: segment.num,
+                        total: totalSegments,
+                        progress: Math.round((segment.num / totalSegments) * 100),
+                    };
+                    passThrough.emit("progress", data);
                     if (!onProgress) {
                         return;
                     }
-                    onProgress({
-                        loaded: segment.num,
-                        total: totalSegments,
-                        progress: Math.round((segment.num / totalSegments) * 100) / 100,
-                    });
+                    onProgress(data);
                 });
                 req.pipe(passThrough);
             }
@@ -985,33 +989,19 @@ class YoubetuApi {
                                 Range: `bytes=${start}-${end}`,
                             },
                             agent: this.agent,
-                            // onDownloadProgress: onProgress
-                            //   ? (data) => {
-                            //       const chunck_lenght = Math.min(
-                            //         start + data.loaded,
-                            //         contentLength,
-                            //       );
-                            //       onProgress({
-                            //         loaded: chunck_lenght,
-                            //         total: contentLength,
-                            //         progress: Math.round(
-                            //           (chunck_lenght / contentLength) * 100,
-                            //         ),
-                            //       });
-                            //     }
-                            //   : undefined,
                         })
                             .replay(2);
                         response.data.on("data", (chunk) => {
                             passThrough.write(chunk);
                         });
                         response.data.on("end", () => {
-                            onProgress &&
-                                onProgress({
-                                    loaded: end,
-                                    total: contentLength,
-                                    progress: Math.round((end / contentLength) * 100),
-                                });
+                            const data = {
+                                loaded: end,
+                                total: contentLength,
+                                progress: Math.round((end / contentLength) * 100),
+                            };
+                            onProgress && onProgress(data);
+                            passThrough.emit("progress", data);
                             if (end !== contentLength) {
                                 start = end + 1;
                                 end += CHUNK_SIZE;

@@ -1,4 +1,3 @@
-"use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -8,24 +7,27 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const core_1 = require("request_chain/core");
-const crypto_1 = __importDefault(require("crypto"));
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
-const sanitize_filename_1 = __importDefault(require("sanitize-filename"));
-const os_1 = __importDefault(require("os"));
-// windows
+import { RequestChain } from "request_chain/core";
+import { Downloader } from "request_chain/node";
+import crypto from "crypto";
+import path from "path";
+import fs from "fs";
+import sanitize from "sanitize-filename";
+import os from "os";
+import elliptic from "elliptic";
+import machine from "node-machine-id";
+import { v5 as uuidv5, v4 as uuidv4 } from "uuid";
+const EC = elliptic.ec;
+const secp = new EC("secp256k1");
 const headers = {
     "sec-fetch-dest": "empty",
     "sec-fetch-mode": "no-cors",
     "sec-fetch-site": "none",
-    Origin: "https://www.alipan.com",
+    // Origin: "https://www.alipan.com",
     Referer: "https://www.aliyundrive.com/",
-    "x-canary": "client=windows,app=adrive,version=v6.3.1",
+    // Referer: "https://www.alipan.com/",
+    "x-canary": "client=Windows,app=adrive,version=v6.4.2",
+    // "x-canary": "client=web,app=adrive,version=v6.4.2",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) aDrive/6.3.1 Chrome/112.0.5615.165 Electron/24.1.3.7 Safari/537.36",
 };
 /**
@@ -56,12 +58,101 @@ function limitConcurrency(tasks_1) {
 }
 class AliCloudApi {
     constructor(options) {
-        this.chain = new core_1.RequestChain({
-            timeout: 10000,
+        this.local_cache = options.localCache;
+        this.chain = new RequestChain({
+            local: this.local_cache,
             request: options.request,
-            localCache: options.localCache,
+            interceptor: options.interceptor,
+        }, {
+            timeout: 10000,
             headers,
-        }, options.interceptor);
+        });
+    }
+    /**
+     * 随机的设备id
+     * @returns
+     */
+    generateRandomDeviceId() {
+        // return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+        //   /[xy]/g,
+        //   function (e) {
+        //     var t = (16 * Math.random()) | 0;
+        //     return ("x" == e ? t : (3 & t) | 8).toString(16);
+        //   }
+        // );
+        return uuidv4();
+    }
+    /**
+     * 根据设备标识 生成设备ID
+     */
+    generateDeviceId() {
+        const NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+        const platform = os.platform();
+        const arch = os.arch();
+        const hostname = os.hostname();
+        const deviceInfo = `${platform}-${arch}-${hostname}-${machine.machineIdSync()}`;
+        const uuid = uuidv5(deviceInfo, NAMESPACE);
+        return uuid;
+    }
+    x_signature(params) {
+        const { app_id, x_device_id, user_id, nonce, privateKeyHex } = params;
+        try {
+            const message = `${app_id}:${x_device_id}:${user_id}:${nonce}`;
+            const hash = crypto.createHash("sha256").update(message).digest("hex");
+            const result = secp
+                .keyFromPrivate(privateKeyHex, "hex")
+                .sign(hash, { canonical: true });
+            const recovery = result.recoveryParam;
+            const [r, s] = [result.r.toString("hex"), result.s.toString("hex")];
+            return `${r}${s}0${recovery}`;
+        }
+        catch (error) {
+            return undefined;
+        }
+    }
+    generatePrivateKeyHex(params) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const keyPair = secp.genKeyPair();
+            const privateKeyHex = keyPair.getPrivate("hex");
+            const publicKeyHex = keyPair.getPublic("hex");
+            yield this.chain
+                .post("https://api.aliyundrive.com/users/v1/users/device/create_session")
+                .send({
+                deviceName: os.hostname().toLocaleUpperCase() || "Edge浏览器",
+                modelName: "Windows客户端",
+                pubKey: publicKeyHex,
+                user_id: params.user_id,
+            })
+                .setHeaders({
+                Authorization: `Bearer ${params.token}`,
+                "x-signature": this.x_signature(Object.assign(Object.assign({}, params), { privateKeyHex })),
+                "x-device-id": params.x_device_id,
+            });
+            return { privateKeyHex, publicKeyHex };
+        });
+    }
+    generateRequestParams(parmas) {
+        return {
+            header: {
+                Authorization: parmas.token ? `Bearer ${parmas.token}` : undefined,
+                "x-signature": this.x_signature(parmas),
+                "x-device-id": parmas.x_device_id,
+            },
+            data: {
+                user_id: parmas.user_id,
+                drive_id: parmas.drive_id,
+                app_id: parmas.app_id,
+            },
+            token: parmas.token,
+        };
+    }
+    reportTask(slice_num, request_params) {
+        return this.chain
+            .post("https://api.aliyundrive.com/adrive/v2/file/reportDownloadTask")
+            .send(Object.assign({ slice_num }, request_params.data))
+            .setHeaders(request_params.header)
+            .cache("memory", 2000)
+            .enableMergeSame();
     }
     /**
      * 获取云盘配置信息，如app_id、client_id
@@ -134,10 +225,16 @@ class AliCloudApi {
             mergeSame: true,
             data: {
                 grant_type: "refresh_token",
-                app_id,
                 refresh_token,
+                app_id,
             },
         });
+    }
+    logout(request_params) {
+        return this.chain
+            .post("https://api.aliyundrive.com/users/v1/users/device_logout")
+            .send(request_params.data)
+            .setHeaders(request_params.header);
     }
     /**
      * 二维码登录
@@ -188,98 +285,80 @@ class AliCloudApi {
     }
     /**
      * 获取个人信息和 drive_id = resource_drive_id
-     * 默认缓存1天
      */
     getUserInfo(token) {
         return this.chain
             .request({
             url: "https://user.aliyundrive.com/v2/user/get",
             method: "POST",
-            cache: "local",
-            expires: AliCloudApi.TIME_ONE_DAY,
         })
             .setHeaders({
-            Authorization: `Bearer ${token}`,
+            Authorization: token ? `Bearer ${token}` : undefined,
         });
     }
     /**
      * 获取文件目录
      */
-    getDirs(params) {
+    getDirs(params, request_params) {
         return this.chain
-            .request({
-            url: "https://api.aliyundrive.com/adrive/v3/file/list?jsonmask=next_marker%2Citems(name%2Cfile_id%2Cdrive_id%2Ctype%2Csize%2Ccreated_at%2Cupdated_at%2Ccategory%2Cfile_extension%2Cparent_file_id%2Cmime_type%2Cstarred%2Cthumbnail%2Curl%2Cstreams_info%2Ccontent_hash%2Cuser_tags%2Cuser_meta%2Ctrashed%2Cvideo_media_metadata%2Cvideo_preview_metadata%2Csync_meta%2Csync_device_flag%2Csync_flag%2Cpunish_flag%2Cfrom_share_id)",
-            method: "POST",
-            data: Object.assign(Object.assign({ parent_file_id: "root", limit: 20, all: false, url_expire_sec: 14400, image_thumbnail_process: "image/resize,w_256/format,avif", image_url_process: "image/resize,w_1920/format,avif", video_thumbnail_process: "video/snapshot,t_120000,f_jpg,m_lfit,w_256,ar_auto,m_fast", fields: "*", order_by: "updated_at", order_direction: "DESC" }, params), { token: undefined }),
-        })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .post("https://api.aliyundrive.com/adrive/v3/file/list?jsonmask=next_marker%2Citems(name%2Cfile_id%2Cdrive_id%2Ctype%2Csize%2Ccreated_at%2Cupdated_at%2Ccategory%2Cfile_extension%2Cparent_file_id%2Cmime_type%2Cstarred%2Cthumbnail%2Curl%2Cstreams_info%2Ccontent_hash%2Cuser_tags%2Cuser_meta%2Ctrashed%2Cvideo_media_metadata%2Cvideo_preview_metadata%2Csync_meta%2Csync_device_flag%2Csync_flag%2Cpunish_flag%2Cfrom_share_id)")
+            .send(Object.assign(Object.assign({ parent_file_id: "root", limit: 20, all: false, url_expire_sec: 14400, image_thumbnail_process: "image/resize,w_400/format,jpeg", image_url_process: "image/resize,w_1920/format,jpegjpeg", video_thumbnail_process: "video/snapshot,t_120000,f_jpg,m_lfit,w_400,ar_auto,m_fast", fields: "*", order_by: "updated_at", order_direction: "DESC" }, params), request_params.data))
+            .setHeaders(request_params.header);
     }
     /**
      * 获取文件信息
-     * @param drive_id
      * @param file_id
      * @returns
      */
-    getFileInfo(params) {
+    getFileInfo(file_id, request_params) {
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/v2/file/get",
             method: "POST",
-            cache: "local",
-            expires: AliCloudApi.TIME_ONE_MINUTE,
-            data: Object.assign(Object.assign({}, params), { token: undefined, url_expire_sec: 14400, office_thumbnail_process: "image/resize,w_400/format,jpeg", image_thumbnail_process: "image/resize,w_400/format,jpeg", image_url_process: "image/resize,w_1920/format,jpeg", video_thumbnail_process: "video/snapshot,t_106000,f_jpg,ar_auto,m_fast,w_400" }),
+            data: Object.assign({ file_id, url_expire_sec: 14400, office_thumbnail_process: "image/resize,w_400/format,jpeg", image_thumbnail_process: "image/resize,w_400/format,jpeg", image_url_process: "image/resize,w_1920/format,jpeg", video_thumbnail_process: "video/snapshot,t_106000,f_jpg,ar_auto,m_fast,w_400" }, request_params.data),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(request_params.header);
     }
     /**
      * 通过路径获取文件信息
-     * @param drive_id
      * @param file_path
      * @returns
      */
-    getFileInfoByPath(params) {
+    getFileInfoByPath(file_path, request_params) {
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/v2/file/get_by_path",
             method: "POST",
-            data: Object.assign(Object.assign({}, params), { token: undefined }),
+            data: Object.assign({ file_path }, request_params.data),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(request_params.header);
     }
     /**
-     * 获取下载地址,默认缓存2分钟
-     * @param drive_id
+     * 获取下载地址,默认4小时
+     * 返回 header 里面的 access-control-allow-origin  在下载时的 Referer进行设置
      * @param file_id   id
      * @returns
      */
-    getDownloadUrl(params) {
+    getDownloadUrl(params, request_params) {
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/v2/file/get_download_url",
             method: "POST",
             cache: "local",
-            expires: AliCloudApi.TIME_ONE_MINUTE * 2,
-            data: Object.assign(Object.assign({}, params), { token: undefined }),
+            expires: 14400000,
+            data: Object.assign(Object.assign(Object.assign({}, params), request_params.data), { expire_sec: 14400, os: undefined }),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(Object.assign(Object.assign({}, request_params.header), { "x-canary": `client=${params.os || "web"},app=adrive,version=v6.4.2` }));
     }
     generateProofCode(buf, token) {
         const buffa = Buffer.from(token);
-        const md5a = crypto_1.default.createHash("md5").update(buffa).digest("hex");
+        const md5a = crypto.createHash("md5").update(buffa).digest("hex");
         const start = Number(BigInt("0x" + md5a.substring(0, 16)) % BigInt(buf.byteLength));
         const end = Math.min(start + 8, buf.byteLength);
         const buffb = buf.subarray(start, end);
         const proof_code = buffb.toString("base64");
         const content_hash_name = "sha1";
-        const content_hash = crypto_1.default
+        const content_hash = crypto
             .createHash(content_hash_name)
             .update(buf)
             .digest("hex")
@@ -292,7 +371,7 @@ class AliCloudApi {
         };
     }
     generatePreHash(buf) {
-        const pre_hash = crypto_1.default
+        const pre_hash = crypto
             .createHash("sha1")
             .update(buf.subarray(0, 1024))
             .digest("hex")
@@ -302,112 +381,141 @@ class AliCloudApi {
     /**
      * 扔进回收站
      */
-    trashRecycleBin(params) {
-        return this.chain
-            .request({
-            url: "https://api.aliyundrive.com/v2/recyclebin/trash",
-            method: "POST",
-            data: Object.assign(Object.assign({}, params), { token: undefined }),
-        })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+    trashRecycleBin(file_ids, request_params) {
+        if (file_ids.length >= 2) {
+            return this.chain
+                .request({
+                url: "https://api.aliyundrive.com/adrive/v4/batch",
+                method: "POST",
+                data: {
+                    resource: "file",
+                    requests: file_ids.map((key) => {
+                        return {
+                            body: {
+                                drive_id: request_params.data.drive_id,
+                                file_id: key,
+                            },
+                            headers: { "Content-Type": "application/json" },
+                            id: key,
+                            method: "POST",
+                            url: "/recyclebin/trash",
+                        };
+                    }),
+                },
+            })
+                .setHeaders(request_params.header);
+        }
+        else {
+            return this.chain
+                .request({
+                url: "https://api.aliyundrive.com/v2/recyclebin/trash",
+                method: "POST",
+                data: Object.assign({ file_id: file_ids[0] }, request_params.data),
+            })
+                .setHeaders(request_params.header);
+        }
     }
     /**
      * 回收站还原
      */
-    restoreRecycleBin(params) {
+    restoreRecycleBin(file_id, request_params) {
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/v2/recyclebin/restore",
             method: "POST",
-            data: Object.assign(Object.assign({}, params), { token: undefined }),
+            data: Object.assign({ file_id }, request_params.data),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(request_params.header);
     }
     /**
      * 回收站列表
      */
-    getRecycleBins(params) {
+    getRecycleBins(params, request_params) {
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/v2/recyclebin/list",
             method: "POST",
-            data: Object.assign(Object.assign({ fields: "*", all: false, limit: 50 }, params), { token: undefined }),
+            data: Object.assign(Object.assign({ fields: "*", all: false, limit: 50 }, params), request_params.data),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(request_params.header);
     }
     /**
      * 彻底删除
-     * @param drive_id
      * @param file_id
      * @returns
      */
-    delete(params) {
-        return __awaiter(this, void 0, void 0, function* () {
+    delete(file_ids, request_params) {
+        if (file_ids.length >= 2) {
+            return this.chain
+                .request({
+                url: "https://api.aliyundrive.com/adrive/v4/batch",
+                method: "POST",
+                data: {
+                    resource: "file",
+                    requests: file_ids.map((key) => {
+                        return {
+                            body: {
+                                drive_id: request_params.data.drive_id,
+                                file_id: key,
+                                permanently: true,
+                            },
+                            headers: { "Content-Type": "application/json" },
+                            id: key,
+                            method: "POST",
+                            url: "/file/delete",
+                        };
+                    }),
+                },
+            })
+                .setHeaders(request_params.header);
+        }
+        else {
             return this.chain
                 .request({
                 url: "https://api.aliyundrive.com/v3/file/delete",
                 method: "POST",
-                data: Object.assign(Object.assign({}, params), { permanently: true, token: undefined }),
+                data: Object.assign(Object.assign({}, request_params.data), { file_id: file_ids[0], permanently: true }),
             })
-                .setHeaders({
-                Authorization: `Bearer ${params.token}`,
-            });
-        });
+                .setHeaders(request_params.header);
+        }
     }
     /**
      * 搜索文件
      * @param params
      * @returns
      */
-    searchFile(params) {
+    searchFile(params, request_params) {
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/adrive/v3/file/search",
             method: "POST",
-            data: {
-                limit: 100,
-                order_by: "name ASC",
-                drive_id: params.drive_id,
-                query: `parent_file_id = "${params.parent_file_id || "root"}" and (name = "${params.name}")`,
-            },
+            data: Object.assign({ limit: 100, order_by: "name ASC", query: `parent_file_id = "${params.parent_file_id || "root"}" and (name = "${params.name}")`, marker: params.marker }, request_params.data),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(request_params.header);
     }
     /**
      * 创建文件
      * @param params
      * @returns
      */
-    createDir(params) {
+    createDir(params, request_params) {
         var _a;
         return this.chain
             .request({
             url: "https://api.aliyundrive.com/adrive/v2/file/createWithFolders",
             method: "POST",
-            data: Object.assign({ check_name_mode: "refuse", parent_file_id: (_a = params.parent_file_id) !== null && _a !== void 0 ? _a : "root", type: "folder" }, params),
+            data: Object.assign(Object.assign({ check_name_mode: "refuse", parent_file_id: (_a = params.parent_file_id) !== null && _a !== void 0 ? _a : "root", type: "folder" }, params), request_params.data),
         })
-            .setHeaders({
-            Authorization: `Bearer ${params.token}`,
-        });
+            .setHeaders(request_params.header);
     }
     /**
      * 检查创建路径文件
-     * @param drive_id
      * @param cloud_path
      * @returns
      */
-    checkCreateDirByPath(params) {
+    checkCreateDirByPath(cloud_path, request_params) {
         return __awaiter(this, void 0, void 0, function* () {
             let info;
-            const { cloud_path, drive_id, token } = params;
             const names = cloud_path.split("/");
             if (names[0] === "root") {
                 names.shift();
@@ -416,11 +524,7 @@ class AliCloudApi {
             for (let i = names.length; i > 0; i--) {
                 try {
                     const dir_path = names.slice(0, i).join("/");
-                    const result = yield this.getFileInfoByPath({
-                        drive_id,
-                        file_path: `/${dir_path}`,
-                        token,
-                    }).getData();
+                    const result = yield this.getFileInfoByPath(`/${dir_path}`, request_params).getData();
                     info = {
                         domain_id: "",
                         drive_id: result.drive_id,
@@ -441,180 +545,74 @@ class AliCloudApi {
                 const createnames = names.slice(existPosition);
                 for (let i = 0; i < createnames.length; i++) {
                     const params = {
-                        drive_id,
                         name: createnames[i],
                         parent_file_id: (info === null || info === void 0 ? void 0 : info.file_id) || "root",
-                        token,
                     };
-                    info = yield this.createDir(params).getData();
+                    info = yield this.createDir(params, request_params).getData();
                 }
             }
             return info;
         });
     }
-    /**
-     * 创建下载任务
-     * @param params
-     * @returns
-     */
-    downloadTask(params) {
+    downloadTask(params, request_params) {
         return __awaiter(this, void 0, void 0, function* () {
-            const timeRef = setInterval(() => {
-                this.reportTask(Object.assign({ slice_num: 2 }, params));
-            }, 5000);
-            try {
-                const { file, dir_path, temp_dir_path = path_1.default.join(os_1.default.tmpdir(), "yunpan"), } = params;
-                const dir_name = (0, sanitize_filename_1.default)(file.name.split(".")[0]);
-                fs_1.default.mkdirSync(path_1.default.join(temp_dir_path, dir_name), {
-                    recursive: true,
-                });
-                fs_1.default.mkdirSync(params.dir_path, { recursive: true });
-                const init_part_size = Math.min(file.size, 5242880);
-                const part_size = params.part_size || 20 * 1024 * 1024;
-                const parts = [
-                    {
-                        start: 0,
-                        end: init_part_size - 1,
-                        size: init_part_size,
-                    },
-                ];
-                const len = Math.ceil(Math.max(file.size - init_part_size, 0) / part_size);
-                let start = init_part_size;
-                let end = 0;
-                for (let i = 1; i <= len; i++) {
-                    end = Math.min(start + part_size, file.size);
-                    parts.push({
-                        start,
-                        end: end - 1,
-                        size: end - start,
-                    });
-                    start = end;
+            const { file, temp_dir_path = path.join(os.tmpdir(), "yunpan") } = params;
+            if (!file.download_url) {
+                const response = yield this.getDownloadUrl({
+                    file_id: file.file_id,
+                    os: file.size > 100 * 1024 * 1024 ? "Windows" : "web",
+                    // os: "Windows",
+                }, request_params);
+                if (!params.referer) {
+                    params.referer = response.headers["access-control-allow-origin"];
                 }
-                let loaded = 0;
-                let etag = "";
-                const reportProgress = (loaded) => {
-                    if (!params.onProgress) {
-                        return;
-                    }
-                    params.onProgress({
-                        loaded,
-                        total: file.size,
-                        progress: Math.round((loaded / file.size) * 100),
-                    });
-                };
-                const tasks = [];
-                if (!file.download_url) {
-                    const response = yield this.getDownloadUrl({
-                        drive_id: file.drive_id,
-                        file_id: file.file_id,
-                        token: params.token,
-                    }).getData();
-                    file.download_url = response.url;
-                }
-                for (let i = 0; i < parts.length; i++) {
-                    tasks.push(() => __awaiter(this, void 0, void 0, function* () {
-                        const part = parts[i];
-                        const temp_path = path_1.default.join(temp_dir_path, dir_name, `${(0, sanitize_filename_1.default)(file.name)}.part${i}`);
-                        const range = [part.start, part.end];
-                        if (fs_1.default.existsSync(temp_path)) {
-                            const stat = fs_1.default.statSync(temp_path);
-                            if (stat.size === part.size) {
-                                return;
-                            }
-                            range[0] = stat.size;
-                        }
-                        const stream = fs_1.default.createWriteStream(temp_path);
-                        const response = yield this.chain.request({
-                            url: file.download_url,
-                            responseType: "stream",
-                            method: "GET",
-                            headers: {
-                                Connection: "keep-alive",
-                                Range: `bytes=${range[0]}-${range[1]}`,
-                                "Accept-Encoding": "",
-                                "If-Range": etag !== null && etag !== void 0 ? etag : undefined,
-                            },
-                            onDownloadProgress(progressEvent) {
-                                // console.log(
-                                //   `${file.name} ===> `,
-                                //   `${progressEvent.loaded}/${progressEvent.total} ${
-                                //     progressEvent.progress * 100
-                                //   }`
-                                // );
-                                reportProgress(loaded + (progressEvent.loaded || 0));
-                            },
-                        });
-                        etag = response.headers.etag;
-                        response.data.on("data", (chunk) => {
-                            stream.write(chunk);
-                        });
-                        yield new Promise((resolve, reject) => {
-                            response.data.on("close", () => {
-                                stream.close();
-                                resolve(temp_path);
-                            });
-                            response.data.on("end", () => {
-                                stream.end();
-                                resolve(temp_path);
-                            });
-                            response.data.on("error", (error) => {
-                                reject(error);
-                            });
-                        });
-                        loaded += part.size;
-                        reportProgress(loaded);
-                    }));
-                }
-                reportProgress(loaded);
-                yield tasks.shift()();
-                yield limitConcurrency(tasks, params.concurrent || 2);
-                reportProgress(file.size);
-                yield this.reportTask(Object.assign({ slice_num: 0 }, params));
-                const files = fs_1.default.readdirSync(path_1.default.join(temp_dir_path, dir_name));
-                const file_parts = files.sort((a, b) => {
-                    const numA = parseInt(a.match(/\.part(\d+)$/)[1], 10);
-                    const numB = parseInt(b.match(/\.part(\d+)$/)[1], 10);
-                    return numA - numB;
-                });
-                const outputStream = fs_1.default.createWriteStream(path_1.default.join(dir_path, file.name));
-                for (const part of file_parts) {
-                    const partPath = path_1.default.join(temp_dir_path, dir_name, part);
-                    const data = fs_1.default.readFileSync(partPath);
-                    outputStream.write(data);
-                }
-                outputStream.end();
-                fs_1.default.rmSync(path_1.default.join(temp_dir_path, dir_name), {
-                    recursive: true,
-                    force: true,
-                });
-                clearInterval(timeRef);
+                file.download_url = response.data.url;
             }
-            catch (error) {
-                clearInterval(timeRef);
-                return Promise.reject(error);
-            }
+            const downloader = new Downloader({
+                url: file.download_url,
+                request: (config) => {
+                    return this.chain.request(config);
+                },
+                fetchFileInfo(config) {
+                    return Promise.resolve({
+                        name: file.name,
+                        file_size: file.size,
+                    });
+                },
+                temp_path: temp_dir_path,
+                part_size: params.part_size || 30 * 1024 * 1024,
+            });
+            downloader.setConfig({
+                headers: Object.assign(Object.assign({}, headers), { Connection: "keep-alive", "Accept-Encoding": "", "x-canary": undefined, referer: params.referer || headers.Referer }),
+            });
+            const download = downloader.download.bind(downloader);
+            downloader.download = (...args_1) => __awaiter(this, [...args_1], void 0, function* (concurrent = 2) {
+                const stream = yield downloader.startPart(0, {
+                    preloaded: 5 * 1024 * 1024,
+                    useCache: true,
+                });
+                yield downloader.waitPartStream(stream);
+                return download(concurrent);
+            });
+            return downloader;
         });
     }
     /**
      *  遍历获取目录文件树
      */
-    traverseDirs(params) {
+    traverseDirs(file_id, request_params) {
         return __awaiter(this, void 0, void 0, function* () {
-            const root = yield this.getFileInfo(params).getData();
+            const root = yield this.getFileInfo(file_id, request_params).getData();
             if (root.type === "folder") {
                 const traverse = (parent_file_id) => __awaiter(this, void 0, void 0, function* () {
                     let next = "init";
                     let files = [];
                     while (next) {
                         const { items, next_marker } = yield this.getDirs({
-                            drive_id: params.drive_id,
                             parent_file_id,
                             limit: 100,
                             marker: next === "init" ? undefined : next,
-                            token: params.token,
-                        })
-                            .cache("local", 30000)
-                            .getData();
+                        }, request_params).getData();
                         next = next_marker;
                         files = files.concat(items);
                     }
@@ -636,9 +634,9 @@ class AliCloudApi {
     /**
      * 获取具有下载地址的文件树
      */
-    extractLinksFromDirs(params) {
+    extractLinksFromDirs(params, request_params) {
         return __awaiter(this, void 0, void 0, function* () {
-            const tree = yield this.traverseDirs(params);
+            const tree = yield this.traverseDirs(params.file_id, request_params);
             let queque = [...tree.children];
             while (queque.length) {
                 const file = queque.shift();
@@ -646,33 +644,16 @@ class AliCloudApi {
                     queque = queque.concat(file.children);
                 }
                 else if (!file.download_url) {
-                    const response = yield this.getDownloadUrl(Object.assign(Object.assign({}, params), { file_id: file.file_id })).getData();
+                    const response = yield this.getDownloadUrl({ file_id: file.file_id, os: params.os }, request_params).getData();
                     file.download_url = response.url;
                 }
             }
             return tree;
         });
     }
-    /**
-     * 大概和下载速度是否稳定有关系
-     */
-    reportTask(params) {
-        return this.chain
-            .request({
-            url: "https://api.aliyundrive.com/adrive/v2/file/reportDownloadTask",
-            method: "POST",
-            data: {
-                slice_num: params.slice_num,
-            },
-        })
-            .setHeaders({
-            "x-device-id": params.drive_id,
-            Authorization: `Bearer ${params.token}`,
-        });
-    }
-    download(params, onProgress) {
+    download(params, request_params, onProgress) {
         return __awaiter(this, void 0, void 0, function* () {
-            const { drive_id, file_id, token, part_size, concurrent, temp_path, check_name_mode = "refuse", } = params;
+            const { file_id, part_size, temp_path, check_name_mode = "refuse", } = params;
             let progress = {};
             const reportProgress = () => {
                 if (!onProgress) {
@@ -680,36 +661,13 @@ class AliCloudApi {
                 }
                 onProgress(progress);
             };
-            const file_info = yield this.getFileInfo({
-                drive_id,
-                file_id,
-                token,
-            }).getData();
+            const file_info = yield this.getFileInfo(file_id, request_params).getData();
             const download = (file, save_dir_path) => __awaiter(this, void 0, void 0, function* () {
-                let save_path = path_1.default.join(save_dir_path, (0, sanitize_filename_1.default)(file.name));
-                if (fs_1.default.existsSync(save_path)) {
-                    const stat = fs_1.default.statSync(save_path);
-                    if (check_name_mode === "refuse") {
-                        progress[save_path] = {
-                            progress: 100,
-                            loaded: stat.size,
-                            total: stat.size,
-                            name: file_info.name,
-                        };
-                        reportProgress();
-                        return Promise.resolve({
-                            code: -1,
-                            message: "该文件已存在",
-                        });
-                    }
-                    if (check_name_mode === "compare") {
-                        const buf = fs_1.default.readFileSync(save_path);
-                        const md5 = crypto_1.default
-                            .createHash("sha1")
-                            .update(buf)
-                            .digest("hex")
-                            .toLocaleUpperCase();
-                        if (md5 === file_info.content_hash) {
+                try {
+                    let save_path = path.join(save_dir_path, sanitize(file.name));
+                    if (fs.existsSync(save_path)) {
+                        const stat = fs.statSync(save_path);
+                        if (check_name_mode === "refuse") {
                             progress[save_path] = {
                                 progress: 100,
                                 loaded: stat.size,
@@ -719,60 +677,81 @@ class AliCloudApi {
                             reportProgress();
                             return Promise.resolve({
                                 code: -1,
-                                msg: "该文件已存在",
+                                message: "该文件已存在",
                             });
                         }
+                        if (check_name_mode === "compare") {
+                            const buf = fs.readFileSync(save_path);
+                            const md5 = crypto
+                                .createHash("sha1")
+                                .update(buf)
+                                .digest("hex")
+                                .toLocaleUpperCase();
+                            if (md5 === file_info.content_hash) {
+                                progress[save_path] = {
+                                    progress: 100,
+                                    loaded: stat.size,
+                                    total: stat.size,
+                                    name: file_info.name,
+                                };
+                                reportProgress();
+                                return Promise.resolve({
+                                    code: -1,
+                                    msg: "该文件已存在",
+                                });
+                            }
+                        }
+                        if (check_name_mode === "auto_rename") {
+                            const ext = path.extname(file_info.name);
+                            save_path = save_path.replace(ext, "") + `_${Date.now()}${ext}`;
+                        }
                     }
-                    if (check_name_mode === "auto_rename") {
-                        const ext = path_1.default.extname(file_info.name);
-                        save_path = save_path.replace(ext, "") + `_${Date.now()}${ext}`;
-                    }
-                }
-                yield this.downloadTask({
-                    part_size,
-                    concurrent,
-                    dir_path: save_dir_path,
-                    temp_dir_path: temp_path,
-                    file,
-                    token,
-                    drive_id,
-                    onProgress(data) {
-                        progress[save_path] = {
-                            progress: data.progress,
-                            loaded: data.loaded,
-                            total: data.total,
-                            name: file.name,
-                        };
+                    const downloader = yield this.downloadTask({
+                        part_size,
+                        temp_dir_path: temp_path,
+                        file,
+                    }, request_params);
+                    downloader.onProgress((file) => {
+                        progress[save_path] = file;
                         reportProgress();
-                    },
-                });
-                return {
-                    code: 0,
-                    message: "下载完成",
-                };
+                    });
+                    clearInterval(this.time_ref);
+                    this.time_ref = setInterval(() => {
+                        this.reportTask(2, request_params);
+                    }, 4000);
+                    yield this.reportTask(0, request_params);
+                    yield downloader.download(params.concurrent || 2);
+                    yield downloader.save(save_dir_path);
+                    yield downloader.deleteDownloadTemp();
+                    clearInterval(this.time_ref);
+                    yield this.reportTask(0, request_params);
+                    return {
+                        code: 0,
+                        message: "下载完成",
+                    };
+                }
+                catch (error) {
+                    return Promise.reject(error);
+                }
             });
-            const getDirChildren = (file) => __awaiter(this, void 0, void 0, function* () {
+            const getDirChildren = (file, request_params) => __awaiter(this, void 0, void 0, function* () {
                 let next = "init";
                 let files = [];
                 while (next) {
                     const { items, next_marker } = yield this.getDirs({
-                        drive_id,
                         parent_file_id: file.file_id,
                         limit: 100,
                         marker: next === "init" ? undefined : next,
-                        token,
-                    })
-                        .cache("local", 30000)
-                        .getData();
+                    }, request_params).getData();
                     next = next_marker;
                     files = files.concat(items);
                 }
                 return files;
             });
             const downloadDir = (file, dir_path) => __awaiter(this, void 0, void 0, function* () {
-                const save_dir_path = path_1.default.join(dir_path, (0, sanitize_filename_1.default)(file.name));
-                fs_1.default.mkdirSync(save_dir_path, { recursive: true });
-                const children = yield getDirChildren(file);
+                const save_dir_path = path.join(dir_path, sanitize(file.name));
+                fs.mkdirSync(save_dir_path, { recursive: true });
+                const children = yield getDirChildren(file, request_params);
                 const dirs = [];
                 const files = [];
                 for (const file of children) {
@@ -798,18 +777,243 @@ class AliCloudApi {
                 return downloadDir(file_info, params.save_dir_path);
             }
             else {
-                const save_path = path_1.default.join(params.save_dir_path, (0, sanitize_filename_1.default)(file_info.name));
+                const save_path = path.join(params.save_dir_path, sanitize(file_info.name));
                 return download(file_info, save_path);
             }
         });
     }
-    uploadFile(params, onProgress) {
+    uploadTask(params, request_params) {
+        const { source_path, parent_file_id } = params;
+        if (!fs.existsSync(source_path)) {
+            return Promise.reject("资源文件不存在");
+        }
+        const stat = fs.statSync(source_path);
+        const filename = sanitize(source_path.split(/\/|\\/).pop());
+        const part_info_list = [];
+        const sourceBuffer = fs.readFileSync(source_path);
+        const chunk_size = 10485824;
+        let partSize = chunk_size; // 10485760
+        let partIndex = 0;
+        while (sourceBuffer.byteLength > partSize * 8000)
+            partSize = partSize + chunk_size;
+        while (partIndex * partSize < sourceBuffer.byteLength) {
+            part_info_list.push({
+                part_number: partIndex + 1,
+                part_size: partSize,
+            });
+            partIndex++;
+        }
+        part_info_list[partIndex - 1].part_size =
+            sourceBuffer.byteLength - (partIndex - 1) * partSize;
+        let data = {
+            part_info_list,
+            parent_file_id,
+            name: filename,
+            type: "file",
+            check_name_mode: "auto_rename",
+            size: sourceBuffer.byteLength,
+            create_scene: "file_upload",
+            device_name: "",
+        };
+        if (sourceBuffer.byteLength >= 1024000) {
+            data = Object.assign(Object.assign({}, data), this.generatePreHash(sourceBuffer));
+        }
+        else {
+            data = Object.assign(Object.assign({}, data), this.generateProofCode(sourceBuffer, request_params.token));
+        }
+        let upload_index = params.start_index || 0;
+        let status = "wait";
+        const progress_events = [];
+        const status_events = [];
+        const onProgress = (fn) => {
+            progress_events.push(fn);
+            notifyProgress(Math.min(upload_index * chunk_size, sourceBuffer.byteLength));
+            return () => {
+                const index = progress_events.indexOf(fn);
+                index >= 0 && progress_events.splice(index, 1);
+            };
+        };
+        const notifyProgress = (loaded) => {
+            const data = {
+                loaded,
+                total: stat.size,
+                progress: Math.round((loaded / stat.size) * 100),
+                name: filename,
+            };
+            progress_events.forEach((fn) => {
+                fn(data, {
+                    current: upload_index,
+                    total: part_info_list.length,
+                });
+            });
+        };
+        const onStatus = (fn) => {
+            status_events.push(fn);
+            notifyStatus(status);
+            return () => {
+                const index = status_events.indexOf(fn);
+                index >= 0 && status_events.splice(index, 1);
+            };
+        };
+        const notifyStatus = (value) => {
+            status = value;
+            status_events.forEach((fn) => {
+                fn(status, {
+                    current: upload_index,
+                    total: part_info_list.length,
+                });
+            });
+        };
+        const noop = () => { };
+        const callbaks = [noop, noop, noop];
+        const promise = new Promise((resolve, reject) => {
+            callbaks[0] = resolve;
+            callbaks[1] = reject;
+        });
+        const upload = () => {
+            if (status === "wait") {
+                const [resolve, reject] = callbaks;
+                const done = (result) => {
+                    notifyStatus("done");
+                    notifyProgress(stat.size);
+                    resolve(Object.assign({ name: filename, size: stat.size, content_hash: data.content_hash }, result));
+                };
+                const stop = (error) => {
+                    notifyStatus("stop");
+                    notifyProgress(Math.min(upload_index * chunk_size, sourceBuffer.length));
+                    reject(error);
+                };
+                const pause = () => {
+                    notifyStatus("wait");
+                    notifyProgress(Math.min(upload_index * chunk_size, sourceBuffer.length));
+                };
+                notifyStatus("pending");
+                const run = () => __awaiter(this, void 0, void 0, function* () {
+                    var _a, _b;
+                    try {
+                        const uploadInfo = yield this.chain
+                            .request({
+                            url: "https://api.aliyundrive.com/adrive/v2/file/createWithFolders",
+                            method: "POST",
+                            cache: "local",
+                            expires: 2700000, // 45分钟过期
+                            data,
+                        })
+                            .send(request_params.data)
+                            .setHeaders(request_params.header)
+                            .getData();
+                        if (uploadInfo.rapid_upload) {
+                            done(uploadInfo);
+                            return;
+                        }
+                        while (upload_index < uploadInfo.part_info_list.length) {
+                            const item = uploadInfo.part_info_list[upload_index];
+                            const start = upload_index * chunk_size;
+                            const end = Math.min(sourceBuffer.byteLength, (upload_index + 1) * chunk_size);
+                            const chunk = sourceBuffer.subarray(start, end);
+                            try {
+                                const req = this.chain.request({
+                                    url: item.upload_url,
+                                    method: "PUT",
+                                    data: chunk,
+                                    headers: {
+                                        "Content-Type": "",
+                                        "Content-Length": `${chunk.byteLength}`,
+                                        connection: "keep-alive",
+                                    },
+                                });
+                                callbaks[2] = (value) => {
+                                    req.abort(value);
+                                };
+                                yield req;
+                                upload_index++;
+                                notifyProgress(upload_index * chunk.length);
+                                console.log(params.source_path, "end", upload_index);
+                            }
+                            catch (error) {
+                                if (((_a = error === null || error === void 0 ? void 0 : error.response) === null || _a === void 0 ? void 0 : _a.status) === 409) {
+                                    upload_index++;
+                                    notifyProgress(upload_index * chunk.length);
+                                }
+                                else if (error.message === "wait") {
+                                    pause();
+                                    return;
+                                }
+                                else {
+                                    stop(error);
+                                    return;
+                                }
+                            }
+                        }
+                        const result = yield this.chain
+                            .request({
+                            url: "https://api.aliyundrive.com/v2/file/complete",
+                            method: "POST",
+                            data: Object.assign({ file_id: uploadInfo.file_id, upload_id: uploadInfo.upload_id }, request_params.data),
+                        })
+                            .setHeaders(request_params.header)
+                            .replay(1)
+                            .getData();
+                        done(result);
+                    }
+                    catch (error) {
+                        if (((_b = error === null || error === void 0 ? void 0 : error.response) === null || _b === void 0 ? void 0 : _b.status) === 409) {
+                            try {
+                                delete data.pre_hash;
+                                data = Object.assign(Object.assign({}, data), this.generateProofCode(sourceBuffer, request_params.token));
+                                const uploadInfo = yield this.chain
+                                    .request({
+                                    url: "https://api.aliyundrive.com/adrive/v2/file/createWithFolders",
+                                    method: "POST",
+                                    data,
+                                })
+                                    .send(request_params.data)
+                                    .setHeaders(request_params.header)
+                                    .getData();
+                                done(uploadInfo);
+                            }
+                            catch (error) {
+                                stop(error);
+                                return;
+                            }
+                        }
+                        else {
+                            stop(error);
+                            return;
+                        }
+                    }
+                });
+                run();
+            }
+            return promise;
+        };
+        const finish = () => {
+            return promise;
+        };
+        const handler = {
+            upload,
+            stop: () => {
+                return callbaks[2]("stop");
+            },
+            pause: () => {
+                return callbaks[2]("wait");
+            },
+            onProgress,
+            onStatus,
+            finish,
+            get status() {
+                return status;
+            },
+        };
+        return handler;
+    }
+    uploadFile(params, request_params, onProgress) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a, _b, _c;
-            const { source_path, drive_id, parent_file_id, token, check_name_mode } = params;
+            const { source_path, parent_file_id, check_name_mode } = params;
             let loadeds = [];
-            const stat = fs_1.default.statSync(source_path);
-            const filename = (0, sanitize_filename_1.default)(source_path.split(/\/|\\/).pop());
+            const stat = fs.statSync(source_path);
+            const filename = sanitize(source_path.split(/\/|\\/).pop());
             const reportProgress = () => {
                 if (!onProgress) {
                     return;
@@ -826,11 +1030,9 @@ class AliCloudApi {
                 });
             };
             const { items } = yield this.searchFile({
-                drive_id,
                 name: filename,
                 parent_file_id,
-                token,
-            }).getData();
+            }, request_params).getData();
             const cloud_file = items.find((item) => item.name === filename);
             if (check_name_mode === "refuse" && cloud_file) {
                 loadeds = [stat.size];
@@ -841,7 +1043,7 @@ class AliCloudApi {
                     message: "已有同名文件",
                 };
             }
-            const filebuf = fs_1.default.readFileSync(source_path);
+            const filebuf = fs.readFileSync(source_path);
             const part_info_list = [];
             const chunk_size = 10485824;
             let partSize = chunk_size; // 10485760
@@ -858,7 +1060,6 @@ class AliCloudApi {
             part_info_list[partIndex - 1].part_size =
                 filebuf.byteLength - (partIndex - 1) * partSize;
             let data = {
-                drive_id,
                 part_info_list,
                 parent_file_id,
                 name: filename,
@@ -872,12 +1073,12 @@ class AliCloudApi {
                 data = Object.assign(Object.assign({}, data), this.generatePreHash(filebuf));
             }
             else {
-                data = Object.assign(Object.assign({}, data), this.generateProofCode(filebuf, token));
+                data = Object.assign(Object.assign({}, data), this.generateProofCode(filebuf, request_params.token));
             }
             if (check_name_mode === "compare" && cloud_file) {
                 let content_hash = data.content_hash;
                 if (!content_hash) {
-                    content_hash = crypto_1.default
+                    content_hash = crypto
                         .createHash("sha1")
                         .update(filebuf)
                         .digest("hex")
@@ -898,15 +1099,14 @@ class AliCloudApi {
                     expires: 2700000, // 45分钟过期
                     data,
                 })
-                    .setHeaders({
-                    Authorization: `Bearer ${token}`,
-                })
+                    .send(request_params.data)
+                    .setHeaders(request_params.header)
                     .getData();
                 if (uploadInfo.rapid_upload) {
                     loadeds = [stat.size];
                     reportProgress();
                     return {
-                        code: 0,
+                        code: 200,
                         name: filename,
                         message: "上传成功",
                     };
@@ -952,15 +1152,9 @@ class AliCloudApi {
                     .request({
                     url: "https://api.aliyundrive.com/v2/file/complete",
                     method: "POST",
-                    data: {
-                        drive_id,
-                        file_id: uploadInfo.file_id,
-                        upload_id: uploadInfo.upload_id,
-                    },
+                    data: Object.assign({ file_id: uploadInfo.file_id, upload_id: uploadInfo.upload_id }, request_params.data),
                 })
-                    .setHeaders({
-                    Authorization: `Bearer ${token}`,
-                })
+                    .setHeaders(request_params.header)
                     .replay(1);
                 loadeds = [stat.size];
                 reportProgress();
@@ -974,16 +1168,15 @@ class AliCloudApi {
                 if (((_c = error === null || error === void 0 ? void 0 : error.response) === null || _c === void 0 ? void 0 : _c.status) === 409) {
                     try {
                         delete data.pre_hash;
-                        data = Object.assign(Object.assign({}, data), this.generateProofCode(filebuf, token));
+                        data = Object.assign(Object.assign({}, data), this.generateProofCode(filebuf, request_params.token));
                         yield this.chain
                             .request({
                             url: "https://api.aliyundrive.com/adrive/v2/file/createWithFolders",
                             method: "POST",
                             data,
                         })
-                            .setHeaders({
-                            Authorization: `Bearer ${token}`,
-                        });
+                            .send(request_params.data)
+                            .setHeaders(request_params.header);
                         loadeds = [stat.size];
                         reportProgress();
                         return {
@@ -1008,9 +1201,9 @@ class AliCloudApi {
             }
         });
     }
-    upload(params, onProgress) {
+    upload(params, request_params, onProgress) {
         return __awaiter(this, void 0, void 0, function* () {
-            const { source_path, parent_file_id = "root", drive_id, token } = params;
+            const { source_path, parent_file_id = "root" } = params;
             let progress = {};
             const reportProgress = () => {
                 if (!onProgress) {
@@ -1018,48 +1211,44 @@ class AliCloudApi {
                 }
                 onProgress(progress);
             };
-            const stat = fs_1.default.statSync(source_path);
+            const stat = fs.statSync(source_path);
             if (stat.isDirectory()) {
                 const dirname = source_path.split(/\/|\\/).pop();
                 const { items } = yield this.searchFile({
-                    drive_id,
                     parent_file_id,
                     name: dirname,
-                    token,
-                }).getData();
+                }, request_params).getData();
                 let dir_id = "";
                 if (items.length) {
                     dir_id = items.find((item) => item.name === dirname).file_id;
                 }
                 if (!dir_id) {
                     const dir = yield this.createDir({
-                        drive_id: params.drive_id,
                         parent_file_id: params.parent_file_id,
                         name: dirname,
-                        token,
-                    })
+                    }, request_params)
                         .replay(1)
                         .getData();
                     dir_id = dir.file_id;
                 }
-                const files = fs_1.default.readdirSync(source_path);
+                const files = fs.readdirSync(source_path);
                 const dirs = [];
                 const tasks = [];
                 for (const name of files) {
                     let isfile = false;
-                    const filepath = path_1.default.join(source_path, name);
-                    if (path_1.default.extname(name)) {
+                    const filepath = path.join(source_path, name);
+                    if (path.extname(name)) {
                         isfile = true;
                     }
                     if (!isfile) {
-                        isfile = !fs_1.default.statSync(filepath).isDirectory();
+                        isfile = !fs.statSync(filepath).isDirectory();
                     }
                     if (!isfile) {
                         dirs.push(filepath);
                     }
                     else {
                         tasks.push(() => {
-                            return this.uploadFile(Object.assign(Object.assign({}, params), { parent_file_id: dir_id, source_path: filepath }), (data) => {
+                            return this.uploadFile(Object.assign(Object.assign({}, params), { parent_file_id: dir_id, source_path: filepath }), request_params, (data) => {
                                 progress[filepath] = data;
                                 reportProgress();
                             });
@@ -1071,9 +1260,7 @@ class AliCloudApi {
                         return this.upload({
                             parent_file_id: dir_id,
                             source_path: dir_path,
-                            drive_id,
-                            token,
-                        }, (data) => {
+                        }, request_params, (data) => {
                             progress = Object.assign(Object.assign({}, progress), data);
                             reportProgress();
                         });
@@ -1086,7 +1273,7 @@ class AliCloudApi {
                 };
             }
             else {
-                yield this.uploadFile(params, (data) => {
+                yield this.uploadFile(params, request_params, (data) => {
                     progress[params.source_path] = data;
                     reportProgress();
                 });
@@ -1098,6 +1285,8 @@ class AliCloudApi {
         });
     }
 }
-AliCloudApi.TIME_ONE_DAY = 8640000;
+AliCloudApi.TIME_ONE_DAY = 86400000;
 AliCloudApi.TIME_ONE_MINUTE = 60000;
-exports.default = AliCloudApi;
+AliCloudApi.DeviceRefere = "https://www.aliyundrive.com/";
+AliCloudApi.WebRefere = "https://www.alipan.com/";
+export default AliCloudApi;

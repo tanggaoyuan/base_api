@@ -4,6 +4,7 @@ import { parse } from "node-html-parser";
 import { savefrom } from "@bochilteam/scraper-savefrom";
 import { PassThrough } from "stream";
 import m3u8stream from "m3u8stream";
+import sanitize from "sanitize-filename";
 
 const FORMATS = {
   5: {
@@ -682,7 +683,7 @@ const FORMATS = {
 
 const CHUNK_SIZE = 10 * 1024 * 1024;
 
-class YoubetuApi {
+class YoutubeApi {
   private chain: RequestChain;
 
   private AddyoutubeToken: string;
@@ -692,18 +693,28 @@ class YoubetuApi {
   constructor(options: {
     request: RequestChain.RequestFn;
     localCache: Cache;
-    interceptor?: RequestChain.Interceptor;
+    interceptor?: RequestChain.InterceptorFn;
     agent?: any;
   }) {
     this.agent = options.agent;
     this.chain = new RequestChain(
       {
-        timeout: 10000,
         request: options.request,
-        localCache: options.localCache,
+        local: options.localCache,
+        interceptor: options.interceptor,
       },
-      options.interceptor
+      {
+        timeout: 10000,
+      }
     );
+  }
+
+  public parseVideoId(url: string) {
+    let [_, videoId] = url.split("v=");
+    if (!videoId && url.includes("youtu.be")) {
+      videoId = url.split("/").pop();
+    }
+    return videoId;
   }
 
   public async queryVideos(data: {
@@ -789,8 +800,6 @@ class YoubetuApi {
         "/v2/videos/search"
       );
 
-      // https://cdn.swisscows.com/image?url=
-
       const response = await this.chain
         .get(`https://api.swisscows.com/v2/videos/search`)
         .query(params)
@@ -822,21 +831,22 @@ class YoubetuApi {
     }
   }
 
-  private async requestTubedown(id: string) {
-    return this.chain
+  public async requestTubedown(id: string) {
+    const response = await this.chain
       .post("https://tubedown.cn/api/youtube")
       .send({
         url: `https://www.youtube.com/watch?v=${id}`,
       })
-      .cache("local", 60000)
+      .cache("local", 300000)
       .getData();
+    return response.data;
   }
 
-  private async requestAddyoutube(id: string) {
+  public async requestAddyoutube(id: string) {
     if (!this.AddyoutubeToken) {
       const response = await this.chain
         .get<string>("https://addyoutube.com/")
-        .cache("local", 60000)
+        .cache("local", 300000)
         .setHeaders({
           "User-Agent": this.chain.getPcUserAgent("Windows"),
         });
@@ -940,7 +950,7 @@ class YoubetuApi {
     return { title: title.trim(), formats };
   }
 
-  private async requestSaveForm(id: string) {
+  public async requestSaveForm(id: string) {
     const response = await savefrom(`https://www.youtube.com/watch?v=${id}`);
     const info = response[0] || { meta: { title: "" }, url: [] };
     const title = info.meta.title;
@@ -1049,7 +1059,7 @@ class YoubetuApi {
         return a.filesize - b.filesize;
       });
 
-    return { video, audio, title };
+    return { video, audio, title: sanitize(title) };
   }
 
   public async getMediaInfo(id: string) {
@@ -1082,6 +1092,7 @@ class YoubetuApi {
         }
         break;
       } catch (err) {
+        console.log("xxxxxxxxxxxxxxxxxxxxx", method);
         error = err;
       }
     }
@@ -1095,6 +1106,7 @@ class YoubetuApi {
     return {
       ...info,
       method,
+      videoId: id,
     };
   }
 
@@ -1117,14 +1129,16 @@ class YoubetuApi {
         parser: format.isDashMPD ? "dash-mpd" : "m3u8",
       });
       req.on("progress", (segment, totalSegments) => {
+        const data = {
+          loaded: segment.num,
+          total: totalSegments,
+          progress: Math.round((segment.num / totalSegments) * 100),
+        };
+        passThrough.emit("progress", data);
         if (!onProgress) {
           return;
         }
-        onProgress({
-          loaded: segment.num,
-          total: totalSegments,
-          progress: Math.round((segment.num / totalSegments) * 100) / 100,
-        });
+        onProgress(data);
       });
       req.pipe(passThrough);
     } else {
@@ -1153,21 +1167,6 @@ class YoubetuApi {
                 Range: `bytes=${start}-${end}`,
               },
               agent: this.agent,
-              // onDownloadProgress: onProgress
-              //   ? (data) => {
-              //       const chunck_lenght = Math.min(
-              //         start + data.loaded,
-              //         contentLength,
-              //       );
-              //       onProgress({
-              //         loaded: chunck_lenght,
-              //         total: contentLength,
-              //         progress: Math.round(
-              //           (chunck_lenght / contentLength) * 100,
-              //         ),
-              //       });
-              //     }
-              //   : undefined,
             })
             .replay(2);
 
@@ -1176,12 +1175,13 @@ class YoubetuApi {
           });
 
           response.data.on("end", () => {
-            onProgress &&
-              onProgress({
-                loaded: end,
-                total: contentLength,
-                progress: Math.round((end / contentLength) * 100),
-              });
+            const data = {
+              loaded: end,
+              total: contentLength,
+              progress: Math.round((end / contentLength) * 100),
+            };
+            onProgress && onProgress(data);
+            passThrough.emit("progress", data);
 
             if (end !== contentLength) {
               start = end + 1;
@@ -1202,4 +1202,4 @@ class YoubetuApi {
   }
 }
 
-export default YoubetuApi;
+export default YoutubeApi;

@@ -1,6 +1,6 @@
 import { RequestChain, Cache } from "request_chain/core";
 import { PassThrough } from "stream";
-declare class YoubetuApi {
+declare class YoutubeApi {
     private chain;
     private AddyoutubeToken;
     private agent;
@@ -10,6 +10,7 @@ declare class YoubetuApi {
         interceptor?: RequestChain.InterceptorFn;
         agent?: any;
     });
+    parseVideoId(url: string): string;
     queryVideos(data: {
         keyword: string;
         page: number;
@@ -46,6 +47,7 @@ declare class YoubetuApi {
     };
     getMediaInfo(id: string): Promise<{
         method: string;
+        videoId: string;
         video: {
             mp4s: any[];
             webms: any[];
@@ -63,5 +65,5 @@ declare class YoubetuApi {
         total?: number;
     }) => void): Promise<PassThrough>;
 }
-export default YoubetuApi;
-//# sourceMappingURL=YoubetuApi.d.ts.map
+export default YoutubeApi;
+//# sourceMappingURL=YoutubeApi.d.ts.map

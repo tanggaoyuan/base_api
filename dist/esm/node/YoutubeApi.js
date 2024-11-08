@@ -13,6 +13,7 @@ import { parse } from "node-html-parser";
 import { savefrom } from "@bochilteam/scraper-savefrom";
 import { PassThrough } from "stream";
 import m3u8stream from "m3u8stream";
+import sanitize from "sanitize-filename";
 const FORMATS = {
     5: {
         mimeType: 'video/flv; codecs="Sorenson H.283, mp3"',
@@ -604,7 +605,7 @@ const FORMATS = {
     },
 };
 const CHUNK_SIZE = 10 * 1024 * 1024;
-class YoubetuApi {
+class YoutubeApi {
     constructor(options) {
         this.agent = options.agent;
         this.chain = new RequestChain({
@@ -614,6 +615,13 @@ class YoubetuApi {
         }, {
             timeout: 10000,
         });
+    }
+    parseVideoId(url) {
+        let [_, videoId] = url.split("v=");
+        if (!videoId && url.includes("youtu.be")) {
+            videoId = url.split("/").pop();
+        }
+        return videoId;
     }
     queryVideos(data) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -893,7 +901,7 @@ class YoubetuApi {
             .sort((b, a) => {
             return a.filesize - b.filesize;
         });
-        return { video, audio, title };
+        return { video, audio, title: sanitize(title) };
     }
     getMediaInfo(id) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -924,6 +932,7 @@ class YoubetuApi {
                     break;
                 }
                 catch (err) {
+                    console.log("xxxxxxxxxxxxxxxxxxxxx", method);
                     error = err;
                 }
             }
@@ -931,7 +940,7 @@ class YoubetuApi {
                 return Promise.reject(error);
             }
             const info = this.format(response);
-            return Object.assign(Object.assign({}, info), { method });
+            return Object.assign(Object.assign({}, info), { method, videoId: id });
         });
     }
     downloadSource(format, onProgress) {
@@ -1017,4 +1026,4 @@ class YoubetuApi {
         });
     }
 }
-export default YoubetuApi;
+export default YoutubeApi;

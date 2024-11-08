@@ -7,7 +7,7 @@ declare class YoubetuApi {
     constructor(options: {
         request: RequestChain.RequestFn;
         localCache: Cache;
-        interceptor?: RequestChain.Interceptor;
+        interceptor?: RequestChain.InterceptorFn;
         agent?: any;
     });
     queryVideos(data: {
@@ -15,9 +15,20 @@ declare class YoubetuApi {
         page: number;
         limit: number;
     }): Promise<any[]>;
-    private requestTubedown;
-    private requestAddyoutube;
-    private requestSaveForm;
+    requestTubedown(id: string): Promise<any>;
+    requestAddyoutube(id: string): Promise<{
+        title: string;
+        formats: any[];
+    }>;
+    requestSaveForm(id: string): Promise<{
+        title: string;
+        formats: any[] | {
+            type: string;
+            url: string;
+            name: string;
+            ext: string;
+        }[];
+    }>;
     format(params: {
         title: string;
         formats: Array<any>;
