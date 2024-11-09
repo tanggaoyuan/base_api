@@ -19,7 +19,7 @@
     "node-html-parser": "^6.1.13",
     "node-machine-id": "^1.1.12",
     "qs": "^6.13.0",
-    "request_chain": "file:../request_chain",
+    "request_chain": "github:tanggaoyuan/request_chain",
     "sanitize-filename": "^1.6.3",
     "uuid": "^10.0.0"
   },

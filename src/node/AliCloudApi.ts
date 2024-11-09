@@ -1861,9 +1861,169 @@ class AliCloudApi {
       };
     }
   }
+
+  public getNotes(
+    params: { limit: number },
+    request_params: AliCloudApi.RequestParams
+  ) {
+    return this.chain
+      .request<{
+        result: Array<AliCloudApi.NoteItem>;
+        marker: string;
+        total_count: number;
+      }>({
+        url: "https://api.aliyundrive.com/anote/v1/note/list",
+        method: "POST",
+        data: {
+          ...request_params.data,
+          order_direction: "desc",
+          limit: params.limit || 10,
+        },
+      })
+      .setHeaders(request_params.header);
+  }
+
+  public createNote(
+    params: {
+      title: string;
+      summary?: string;
+      value: Array<AliCloudApi.NoteTag>;
+    },
+    request_params: AliCloudApi.RequestParams
+  ) {
+    return this.chain
+      .request<AliCloudApi.NoteItem>({
+        url: "https://api.aliyundrive.com/anote/v1/note/create",
+        method: "POST",
+        data: {
+          ...request_params.data,
+          ...params,
+          value: ["root", {}, ...params.value],
+        },
+      })
+      .setHeaders(request_params.header);
+  }
+
+  public createNoteText(
+    params: { title: string; value: string },
+    request_params: AliCloudApi.RequestParams
+  ) {
+    return this.createNote(
+      {
+        ...params,
+        value: [
+          [
+            "p",
+            {},
+            [
+              "span",
+              { "data-type": "text" },
+              ["span", { "data-type": "leaf" }, params.value],
+            ],
+          ],
+        ],
+      },
+      request_params
+    );
+  }
+
+  public getNote(doc_id: string, request_params: AliCloudApi.RequestParams) {
+    return this.chain
+      .request<AliCloudApi.NoteItem>({
+        url: "https://api.aliyundrive.com/anote/v1/note/getNote",
+        method: "POST",
+        data: {
+          ...request_params.data,
+          doc_id,
+        },
+      })
+      .setHeaders(request_params.header);
+  }
+
+  public editNote(
+    params: {
+      ops: Array<AliCloudApi.NoteAction>;
+      doc_id: string;
+      version: number;
+      summary?: string;
+    },
+    request_params: AliCloudApi.RequestParams
+  ) {
+    return this.chain
+      .request<any>({
+        url: "https://api.aliyundrive.com/anote/v1/note/patch",
+        method: "POST",
+        data: {
+          ...request_params.data,
+          ...params,
+          ops: params.ops.map((item) => {
+            return {
+              ...item,
+              path: `/${item.path + 2}`,
+            };
+          }),
+        },
+      })
+      .setHeaders(request_params.header);
+  }
+
+  public editNoteText(
+    params: { doc_id: string; version: number; value: string },
+    request_params: AliCloudApi.RequestParams
+  ) {
+    return this.editNote(
+      {
+        ...params,
+        ops: [
+          {
+            op: "replace",
+            path: 0,
+            value: [
+              "p",
+              {},
+              [
+                "span",
+                { "data-type": "text" },
+                ["span", { "data-type": "leaf" }, params.value],
+              ],
+            ],
+          },
+        ],
+      },
+      request_params
+    );
+  }
 }
 
 namespace AliCloudApi {
+  export type NoteAction = {
+    op: "add" | "remove" | "replace";
+    /**
+     * 修改第几个数组的数据内容
+     */
+    path: number;
+    value: NoteTag;
+  };
+
+  export type NoteTag = [string, Record<string, any>, NoteTag | string];
+
+  export interface NoteItem {
+    status: number;
+    top: number;
+    title: string;
+    summary: string;
+    media: string;
+    type: string;
+    value: Array<any>;
+    version: string;
+    user_id: string;
+    doc_id: string;
+    drive_id: string;
+    created_at: number;
+    updated_at: number;
+    media_list: string[];
+  }
+
   export interface RequestParams {
     header: {
       Authorization?: string;

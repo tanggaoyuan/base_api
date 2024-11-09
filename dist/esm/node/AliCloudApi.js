@@ -1284,6 +1284,74 @@ class AliCloudApi {
             }
         });
     }
+    getNotes(params, request_params) {
+        return this.chain
+            .request({
+            url: "https://api.aliyundrive.com/anote/v1/note/list",
+            method: "POST",
+            data: Object.assign(Object.assign({}, request_params.data), { order_direction: "desc", limit: params.limit || 10 }),
+        })
+            .setHeaders(request_params.header);
+    }
+    createNote(params, request_params) {
+        return this.chain
+            .request({
+            url: "https://api.aliyundrive.com/anote/v1/note/create",
+            method: "POST",
+            data: Object.assign(Object.assign(Object.assign({}, request_params.data), params), { value: ["root", {}, ...params.value] }),
+        })
+            .setHeaders(request_params.header);
+    }
+    createNoteText(params, request_params) {
+        return this.createNote(Object.assign(Object.assign({}, params), { value: [
+                [
+                    "p",
+                    {},
+                    [
+                        "span",
+                        { "data-type": "text" },
+                        ["span", { "data-type": "leaf" }, params.value],
+                    ],
+                ],
+            ] }), request_params);
+    }
+    getNote(doc_id, request_params) {
+        return this.chain
+            .request({
+            url: "https://api.aliyundrive.com/anote/v1/note/getNote",
+            method: "POST",
+            data: Object.assign(Object.assign({}, request_params.data), { doc_id }),
+        })
+            .setHeaders(request_params.header);
+    }
+    editNote(params, request_params) {
+        return this.chain
+            .request({
+            url: "https://api.aliyundrive.com/anote/v1/note/patch",
+            method: "POST",
+            data: Object.assign(Object.assign(Object.assign({}, request_params.data), params), { ops: params.ops.map((item) => {
+                    return Object.assign(Object.assign({}, item), { path: `/${item.path + 2}` });
+                }) }),
+        })
+            .setHeaders(request_params.header);
+    }
+    editNoteText(params, request_params) {
+        return this.editNote(Object.assign(Object.assign({}, params), { ops: [
+                {
+                    op: "replace",
+                    path: 0,
+                    value: [
+                        "p",
+                        {},
+                        [
+                            "span",
+                            { "data-type": "text" },
+                            ["span", { "data-type": "leaf" }, params.value],
+                        ],
+                    ],
+                },
+            ] }), request_params);
+    }
 }
 AliCloudApi.TIME_ONE_DAY = 86400000;
 AliCloudApi.TIME_ONE_MINUTE = 60000;

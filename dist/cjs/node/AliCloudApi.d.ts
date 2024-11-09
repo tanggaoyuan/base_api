@@ -296,8 +296,61 @@ declare class AliCloudApi {
         code: number;
         message: string;
     }>;
+    getNotes(params: {
+        limit: number;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
+        result: Array<AliCloudApi.NoteItem>;
+        marker: string;
+        total_count: number;
+    }>;
+    createNote(params: {
+        title: string;
+        summary?: string;
+        value: Array<AliCloudApi.NoteTag>;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.NoteItem>;
+    createNoteText(params: {
+        title: string;
+        value: string;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.NoteItem>;
+    getNote(doc_id: string, request_params: AliCloudApi.RequestParams): RequestChainResponse<AliCloudApi.NoteItem>;
+    editNote(params: {
+        ops: Array<AliCloudApi.NoteAction>;
+        doc_id: string;
+        version: number;
+        summary?: string;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
+    editNoteText(params: {
+        doc_id: string;
+        version: number;
+        value: string;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
 }
 declare namespace AliCloudApi {
+    type NoteAction = {
+        op: "add" | "remove" | "replace";
+        /**
+         * 修改第几个数组的数据内容
+         */
+        path: number;
+        value: NoteTag;
+    };
+    type NoteTag = [string, Record<string, any>, NoteTag | string];
+    interface NoteItem {
+        status: number;
+        top: number;
+        title: string;
+        summary: string;
+        media: string;
+        type: string;
+        value: Array<any>;
+        version: string;
+        user_id: string;
+        doc_id: string;
+        drive_id: string;
+        created_at: number;
+        updated_at: number;
+        media_list: string[];
+    }
     interface RequestParams {
         header: {
             Authorization?: string;
