@@ -25,30 +25,53 @@ const getRequestParams = async () => {
 const test = async () => {
     const params = await getRequestParams();
 
-    // const response = await api.getNotes({ limit: 10 }, params).getData();
+    const response = await api.getNotes({
+        limit: 10,
+        status: 3
+    }, params).getData();
 
-    // console.log(response)
+
+    console.log("response", response)
+
+    // const response = await api.createNoteText({
+    //     title: "测试",
+    //     value: "哈哈访问佛问佛我怕更名为【怕"
+    // }, params).getData()
 
 
-    const doc_id = 'c0eebdfbe16490f2a7dbac9d93069d8d1a3629b2';
+    // console.log("response", response)
+
+
+    // const docs = ['f6fc9691e26480c8c09bd69e9306d6ce1884f8da']
+
+    // const response = await api.removeNote({
+    //     doc_ids: docs,
+    //     operation: 3,
+    // }, params)
+
+
+    // console.log("response", response)
+
+
+    // const doc_id = 'c0eebdfbe16490f2a7dbac9d93069d8d1a3629b2';
 
     // const info = await api.getNote(doc_id, params).getData();
 
     // console.log("info", info)
 
-    const response = await api.editNote({
-        doc_id,
-        ops: [
-            {
-                op: "replace",
-                path: 0,
-                value: ["p", {}, ["span", { "data-type": "text" }, ["span", { "data-type": "leaf" }, "哈哈哈哈"]]]
-            }
-        ],
-        version: 7,
-    }, params)
+    // const response = await api.editNote({
+    //     doc_id,
+    //     ops: [
+    //         {
+    //             op: "replace",
+    //             path: 0,
+    //             value: ["p", {}, ["span", { "data-type": "text" }, ["span", { "data-type": "leaf" }, "哈哈哈哈"]]]
+    //         }
+    //     ],
+    //     version: 7,
+    // }, params)
 
-    console.log("response", response)
+    // console.log("response", response)
 
 
 

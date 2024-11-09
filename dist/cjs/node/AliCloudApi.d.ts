@@ -298,6 +298,7 @@ declare class AliCloudApi {
     }>;
     getNotes(params: {
         limit: number;
+        status?: number;
     }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
         result: Array<AliCloudApi.NoteItem>;
         marker: string;
@@ -323,6 +324,13 @@ declare class AliCloudApi {
         doc_id: string;
         version: number;
         value: string;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
+    updateNoteStatus(params: {
+        doc_ids: Array<string>;
+        /**
+         * 0取消顶置  1顶置 2软删除  3未知操作 4删除
+         */
+        operation: number;
     }, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
 }
 declare namespace AliCloudApi {

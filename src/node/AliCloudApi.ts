@@ -1863,7 +1863,7 @@ class AliCloudApi {
   }
 
   public getNotes(
-    params: { limit: number },
+    params: { limit: number; status?: number },
     request_params: AliCloudApi.RequestParams
   ) {
     return this.chain
@@ -1878,6 +1878,7 @@ class AliCloudApi {
           ...request_params.data,
           order_direction: "desc",
           limit: params.limit || 10,
+          status: params.status || 0,
         },
       })
       .setHeaders(request_params.header);
@@ -1992,6 +1993,28 @@ class AliCloudApi {
       },
       request_params
     );
+  }
+
+  public updateNoteStatus(
+    params: {
+      doc_ids: Array<string>;
+      /**
+       * 0取消顶置  1顶置 2软删除  3未知操作 4删除
+       */
+      operation: number;
+    },
+    request_params: AliCloudApi.RequestParams
+  ) {
+    return this.chain
+      .request<any>({
+        url: "https://api.aliyundrive.com/anote/v1/note/batchUpdate",
+        method: "POST",
+        data: {
+          ...request_params.data,
+          ...params,
+        },
+      })
+      .setHeaders(request_params.header);
   }
 }
 

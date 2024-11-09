@@ -1289,7 +1289,7 @@ class AliCloudApi {
             .request({
             url: "https://api.aliyundrive.com/anote/v1/note/list",
             method: "POST",
-            data: Object.assign(Object.assign({}, request_params.data), { order_direction: "desc", limit: params.limit || 10 }),
+            data: Object.assign(Object.assign({}, request_params.data), { order_direction: "desc", limit: params.limit || 10, status: params.status || 0 }),
         })
             .setHeaders(request_params.header);
     }
@@ -1351,6 +1351,15 @@ class AliCloudApi {
                     ],
                 },
             ] }), request_params);
+    }
+    updateNoteStatus(params, request_params) {
+        return this.chain
+            .request({
+            url: "https://api.aliyundrive.com/anote/v1/note/batchUpdate",
+            method: "POST",
+            data: Object.assign(Object.assign({}, request_params.data), params),
+        })
+            .setHeaders(request_params.header);
     }
 }
 AliCloudApi.TIME_ONE_DAY = 86400000;
