@@ -494,7 +494,7 @@ class AliCloudApi {
             .request({
             url: "https://api.aliyundrive.com/adrive/v3/file/search",
             method: "POST",
-            data: Object.assign({ limit: 100, order_by: "name ASC", query: `parent_file_id = "${params.parent_file_id || "root"}" and (name = "${params.name}")`, marker: params.marker }, request_params.data),
+            data: Object.assign({ limit: params.limit || 20, order_by: "name ASC", query: `parent_file_id = "${params.parent_file_id || "root"}" and (name = "${params.name}")`, marker: params.marker }, request_params.data),
         })
             .setHeaders(request_params.header);
     }

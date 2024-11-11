@@ -663,6 +663,7 @@ class AliCloudApi {
     params: {
       parent_file_id?: string;
       name: string;
+      limit?: number;
       marker?: string;
     },
     request_params: AliCloudApi.RequestParams
@@ -675,7 +676,7 @@ class AliCloudApi {
         url: "https://api.aliyundrive.com/adrive/v3/file/search",
         method: "POST",
         data: {
-          limit: 100,
+          limit: params.limit || 20,
           order_by: "name ASC",
           query: `parent_file_id = "${
             params.parent_file_id || "root"
@@ -1951,7 +1952,7 @@ class AliCloudApi {
     request_params: AliCloudApi.RequestParams
   ) {
     return this.chain
-      .request<any>({
+      .request<{ docId: string; version: number }>({
         url: "https://api.aliyundrive.com/anote/v1/note/patch",
         method: "POST",
         data: {

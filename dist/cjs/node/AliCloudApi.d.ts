@@ -167,6 +167,7 @@ declare class AliCloudApi {
     searchFile(params: {
         parent_file_id?: string;
         name: string;
+        limit?: number;
         marker?: string;
     }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
         items: AliCloudApi.FileDirItem[];
@@ -319,12 +320,18 @@ declare class AliCloudApi {
         doc_id: string;
         version: number;
         summary?: string;
-    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
+        docId: string;
+        version: number;
+    }>;
     editNoteText(params: {
         doc_id: string;
         version: number;
         value: string;
-    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<any>;
+    }, request_params: AliCloudApi.RequestParams): RequestChainResponse<{
+        docId: string;
+        version: number;
+    }>;
     updateNoteStatus(params: {
         doc_ids: Array<string>;
         /**
